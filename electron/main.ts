@@ -111,6 +111,12 @@ function createTray() {
 }
 
 app.whenReady().then(async () => {
+  // Packaged builds get the Dock icon from Info.plist (set via build.icon in package.json).
+  // In dev there's no app bundle yet, so set it explicitly.
+  if (isDev && process.platform === "darwin") {
+    app.dock?.setIcon(path.join(__dirname, "..", "build", "icon.png"));
+  }
+
   await startNextServer();
   createWindow();
   createTray();

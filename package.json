@@ -45,6 +45,7 @@
     "appId": "com.hotshotbot",
     "productName": "HotShotBot",
     "asar": false,
+    "icon": "build/icon.icns",
     "mac": {
       "category": "public.app-category.video",
       "target": [

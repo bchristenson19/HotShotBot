@@ -17,9 +17,6 @@
 /.next/
 /out/
 
-# production
-/build
-
 # electron compiled output
 /electron-dist/
 
