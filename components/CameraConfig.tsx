@@ -14,6 +14,7 @@ const MODEL_LABELS: Record<CameraModel, string> = {
   "aw-ue70":   "AW-UE70",
   "aw-ue160":  "AW-UE160",
   "aw-he130":  "AW-HE130",
+  "virtual":   "Virtual (3D)",
 };
 
 export default function CameraConfig({ cameras, onChange, onClose }: Props) {
@@ -72,7 +73,7 @@ export default function CameraConfig({ cameras, onChange, onClose }: Props) {
   }
 
   function save() {
-    const valid = draft.filter((c) => c.ip.trim());
+    const valid = draft.filter((c) => c.ip.trim() || c.model === "virtual");
     if (!valid.length) return;
     onChange(valid);
     onClose();
@@ -166,30 +167,38 @@ export default function CameraConfig({ cameras, onChange, onClose }: Props) {
                 </select>
               </div>
 
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="IP Address (e.g. 192.168.1.100)"
-                  value={cam.ip}
-                  onChange={(e) => update(i, "ip", e.target.value)}
-                  className="flex-1 bg-zinc-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="number"
-                  placeholder="Port"
-                  value={cam.port}
-                  onChange={(e) => update(i, "port", parseInt(e.target.value) || 80)}
-                  className="w-20 bg-zinc-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+              {cam.model !== "virtual" ? (
+                <>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="IP Address (e.g. 192.168.1.100)"
+                      value={cam.ip}
+                      onChange={(e) => update(i, "ip", e.target.value)}
+                      className="flex-1 bg-zinc-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Port"
+                      value={cam.port}
+                      onChange={(e) => update(i, "port", parseInt(e.target.value) || 80)}
+                      className="w-20 bg-zinc-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
 
-              <input
-                type="text"
-                placeholder={cam.ip ? `Stream URL (default: ${defaultStreamUrl({ ...cam, model: cam.model ?? "aw-ue70" })})` : "Stream URL (optional)"}
-                value={cam.streamUrl ?? ""}
-                onChange={(e) => update(i, "streamUrl", e.target.value)}
-                className="w-full bg-zinc-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-              />
+                  <input
+                    type="text"
+                    placeholder={cam.ip ? `Stream URL (default: ${defaultStreamUrl({ ...cam, model: cam.model ?? "aw-ue70" })})` : "Stream URL (optional)"}
+                    value={cam.streamUrl ?? ""}
+                    onChange={(e) => update(i, "streamUrl", e.target.value)}
+                    className="w-full bg-zinc-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                </>
+              ) : (
+                <p className="text-zinc-500 text-xs italic px-1 py-2">
+                  Renders a 3D scene inside the app — no network camera needed.
+                </p>
+              )}
             </div>
           ))}
 

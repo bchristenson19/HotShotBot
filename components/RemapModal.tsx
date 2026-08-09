@@ -187,6 +187,10 @@ export default function RemapModal({ mapping, onChange, onClose }: Props) {
                 <Slider label="" value={Math.round(draft.ptSensitivity * 100)} unit=""
                   min={10} max={100} step={5} minLabel="10% (slow)" maxLabel="100% (full)"
                   onChange={(v) => setDraft((d) => ({ ...d, ptSensitivity: v / 100 }))} />
+                <Row label="Invert tilt" description="Flips up / down direction">
+                  <Toggle checked={draft.tiltInverted}
+                    onChange={() => setDraft((d) => ({ ...d, tiltInverted: !d.tiltInverted }))} />
+                </Row>
               </div>
 
               <div className="bg-zinc-800 rounded-xl p-4 space-y-3">

@@ -1,10 +1,12 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { Camera } from "@/lib/ptz";
-import { defaultStreamUrl } from "@/lib/ptz";
+import { defaultStreamUrl, isVirtual } from "@/lib/ptz";
 import type { CameraStatus } from "@/hooks/useCameraStatus";
 import ControlsOverlay from "@/components/ControlsOverlay";
 import TrackingCanvas from "@/components/TrackingCanvas";
+import VirtualCameraCanvas from "@/components/VirtualCameraCanvas";
+import type { VirtualPtzController } from "@/lib/virtualPtz";
 import type { GamepadState } from "@/hooks/useGamepad";
 import type { ControlMapping } from "@/lib/mapping";
 import type { TrackingState, Detection } from "@/hooks/useMultiCameraTracking";
@@ -28,9 +30,12 @@ interface Props {
   onSendFrame: (imageData: ImageData, w: number, h: number) => void;
   onLockTarget: (box: Detection) => void;
   onClearLock: () => void;
+  // Virtual camera — non-null when camera.model === "virtual"
+  virtualController?: VirtualPtzController | null;
 }
 
-export default function CameraFeed({ camera, autoFocus, gain, status, statusError, showControls, padState, mapping, profileName, trackingEnabled, workerReady, detections, trackingState: trackingDisplayState, lockedBox, onSendFrame, onLockTarget, onClearLock }: Props) {
+export default function CameraFeed({ camera, autoFocus, gain, status, statusError, showControls, padState, mapping, profileName, trackingEnabled, workerReady, detections, trackingState: trackingDisplayState, lockedBox, onSendFrame, onLockTarget, onClearLock, virtualController }: Props) {
+  const virtual = isVirtual(camera);
   const rawUrl = camera.streamUrl || defaultStreamUrl(camera);
   // In Electron (webSecurity:false) canvas reads cross-origin directly — no proxy needed.
   // typeof check keeps SSR happy; the value is stable after first client render.
@@ -39,15 +44,22 @@ export default function CameraFeed({ camera, autoFocus, gain, status, statusErro
   const url = trackingEnabled && rawUrl && !isElectron
     ? `/api/stream?url=${encodeURIComponent(rawUrl)}`
     : rawUrl;
-  const [streamStatus, setStreamStatus] = useState<"loading" | "live" | "error">("loading");
+  // Only tracks the MJPEG <img> load lifecycle. For virtual cams we derive
+  // streamStatus below without touching this state.
+  const [rawStreamStatus, setStreamStatus] = useState<"loading" | "live" | "error">("loading");
+  const streamStatus: "loading" | "live" | "error" = virtual ? "live" : rawStreamStatus;
   const [isFullscreen, setIsFullscreen] = useState(false);
   const detectionCount = detections.length;
   const imgRef = useRef<HTMLImageElement>(null);
+  const virtualCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Source ref handed to TrackingCanvas — either the MJPEG <img> or the 3D <canvas>
+  const sourceRef = useRef<HTMLImageElement | HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setStreamStatus("loading");
-  }, [url]); // only reset when the URL actually changes, not when tracking is toggled
+    // Virtual cams stay "live"; only reset when the URL changes, not on tracking toggle.
+    if (!virtual) setStreamStatus("loading");
+  }, [url, virtual]);
 
   useEffect(() => {
     function onFsChange() {
@@ -66,7 +78,7 @@ export default function CameraFeed({ camera, autoFocus, gain, status, statusErro
     }
   }, []);
 
-  if (!url) {
+  if (!url && !virtual) {
     return (
       <div className="w-full aspect-video bg-zinc-900 border border-zinc-800 rounded-2xl flex items-center justify-center">
         <p className="text-zinc-600 text-sm">No IP configured — add camera IP in Settings</p>
@@ -76,17 +88,28 @@ export default function CameraFeed({ camera, autoFocus, gain, status, statusErro
 
   return (
     <div ref={containerRef} className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden border border-zinc-800 group">
-      {/* MJPEG stream */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        ref={imgRef}
-        src={url}
-        alt="Camera feed"
-        crossOrigin={trackingEnabled && !isElectron ? "anonymous" : undefined}
-        className={`w-full h-full object-contain transition-opacity duration-300 ${streamStatus === "live" ? "opacity-100" : "opacity-0"}`}
-        onLoad={() => setStreamStatus("live")}
-        onError={() => setStreamStatus("error")}
-      />
+      {virtual ? (
+        /* 3D scene — replaces MJPEG stream */
+        <VirtualCameraCanvas
+          ref={(el) => { virtualCanvasRef.current = el; sourceRef.current = el; }}
+          controller={virtualController ?? null}
+          cameraId={camera.id}
+        />
+      ) : (
+        <>
+          {/* MJPEG stream */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            ref={(el) => { imgRef.current = el; sourceRef.current = el; }}
+            src={url}
+            alt="Camera feed"
+            crossOrigin={trackingEnabled && !isElectron ? "anonymous" : undefined}
+            className={`w-full h-full object-contain transition-opacity duration-300 ${streamStatus === "live" ? "opacity-100" : "opacity-0"}`}
+            onLoad={() => setStreamStatus("live")}
+            onError={() => setStreamStatus("error")}
+          />
+        </>
+      )}
 
       {/* Loading */}
       {streamStatus === "loading" && (
@@ -126,7 +149,7 @@ export default function CameraFeed({ camera, autoFocus, gain, status, statusErro
           {/* Tracking canvas — sits on top of stream, captures clicks */}
           {trackingEnabled && (
             <TrackingCanvas
-              imgRef={imgRef}
+              sourceRef={sourceRef}
               streamLive={streamStatus === "live"}
               detections={detections}
               trackingState={trackingDisplayState}

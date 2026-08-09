@@ -2,8 +2,10 @@
 import { useRef, useEffect, useCallback } from "react";
 import type { TrackingState, Detection } from "@/hooks/useMultiCameraTracking";
 
+type FrameSource = HTMLImageElement | HTMLCanvasElement;
+
 interface Props {
-  imgRef: React.RefObject<HTMLImageElement | null>;
+  sourceRef: React.RefObject<FrameSource | null>;
   streamLive: boolean;
   // Worker results passed in from parent
   detections: Detection[];
@@ -20,8 +22,16 @@ const CAPTURE_W = 640;
 const CAPTURE_H = 360;
 const FRAME_INTERVAL_MS = 150; // ~6-7fps inference — less hectic than 10fps
 
+// Return the source's intrinsic pixel size. Images expose naturalWidth/Height,
+// canvases expose width/height directly.
+function dims(el: FrameSource | null): { w: number; h: number } {
+  if (!el) return { w: 0, h: 0 };
+  if (el instanceof HTMLCanvasElement) return { w: el.width, h: el.height };
+  return { w: el.naturalWidth, h: el.naturalHeight };
+}
+
 export default function TrackingCanvas({
-  imgRef, streamLive,
+  sourceRef, streamLive,
   detections, trackingState, lockedBox, workerReady,
   onSendFrame, onLock, onUnlock,
 }: Props) {
@@ -43,12 +53,15 @@ export default function TrackingCanvas({
     }
 
     frameTimerRef.current = setInterval(() => {
-      const img = imgRef.current;
+      const src = sourceRef.current;
       const cc = captureCanvas.current;
-      if (!img || !cc || !img.complete || img.naturalWidth === 0) return;
+      if (!src || !cc) return;
+      const { w, h } = dims(src);
+      if (w === 0 || h === 0) return;
+      if (src instanceof HTMLImageElement && !src.complete) return;
       const ctx = cc.getContext("2d", { willReadFrequently: true });
       if (!ctx) return;
-      ctx.drawImage(img, 0, 0, CAPTURE_W, CAPTURE_H);
+      ctx.drawImage(src, 0, 0, CAPTURE_W, CAPTURE_H);
       const imageData = ctx.getImageData(0, 0, CAPTURE_W, CAPTURE_H);
       onSendFrameRef.current(imageData, CAPTURE_W, CAPTURE_H);
     }, FRAME_INTERVAL_MS);
@@ -56,7 +69,7 @@ export default function TrackingCanvas({
     return () => {
       if (frameTimerRef.current) clearInterval(frameTimerRef.current);
     };
-  }, [streamLive, workerReady, imgRef]);
+  }, [streamLive, workerReady, sourceRef]);
 
   // Draw loop — renders detection boxes onto the overlay canvas
   useEffect(() => {
@@ -79,8 +92,9 @@ export default function TrackingCanvas({
       const H = canvas.height;
 
       // Compute object-contain image rect
-      const img = imgRef.current;
-      const imgAspect = img?.naturalWidth ? img.naturalWidth / img.naturalHeight : 16 / 9;
+      const src = sourceRef.current;
+      const { w: srcW, h: srcH } = dims(src);
+      const imgAspect = srcW ? srcW / srcH : 16 / 9;
       const canvasAspect = W / H;
       let imgW: number, imgH: number, imgX: number, imgY: number;
       if (imgAspect > canvasAspect) {
@@ -145,20 +159,21 @@ export default function TrackingCanvas({
 
     rafRef.current = requestAnimationFrame(draw);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [streamLive, detections, lockedBox, trackingState, imgRef]);
+  }, [streamLive, detections, lockedBox, trackingState, sourceRef]);
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (lockedBox) { onUnlock(); return; }
 
     const canvas = canvasRef.current;
-    const img = imgRef.current;
+    const src = sourceRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const cx = (e.clientX - rect.left) / rect.width * canvas.width;
     const cy = (e.clientY - rect.top) / rect.height * canvas.height;
     const W = canvas.width, H = canvas.height;
-    const imgAspect = img?.naturalWidth ? img.naturalWidth / img.naturalHeight : 16 / 9;
+    const { w: srcW, h: srcH } = dims(src);
+    const imgAspect = srcW ? srcW / srcH : 16 / 9;
     const ca = W / H;
     let imgW: number, imgH: number, imgX: number, imgY: number;
     if (imgAspect > ca) { imgW = W; imgH = W / imgAspect; imgX = 0; imgY = (H - imgH) / 2; }
@@ -170,7 +185,7 @@ export default function TrackingCanvas({
         onLock(d); return;
       }
     }
-  }, [lockedBox, detections, onLock, onUnlock, imgRef]);
+  }, [lockedBox, detections, onLock, onUnlock, sourceRef]);
 
   return (
     <canvas

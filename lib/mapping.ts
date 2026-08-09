@@ -79,6 +79,7 @@ export interface ControlMapping {
   ptMode: "single" | "dual";
   ptFineScale: number;
   ptSensitivity: number; // 0.1–1.0 multiplier on the left stick output
+  tiltInverted: boolean; // flips tilt direction (push up = tilt down)
   momentumEnabled: boolean;
   momentumGlideMs: number;  // how long (ms) velocity takes to reach ~0 after release
   momentumAccel: number;    // 0–1, how quickly velocity tracks the stick (1 = instant)
@@ -169,7 +170,7 @@ export const DEFAULT_MAPPING: ControlMapping = {
   ptSpeedModifierAffectsZoom: false,
   ptBrakeAxis: "r2",
   ptBrakeMinSpeed: 0.08,
-  zoomInverted: false,
+  zoomInverted: true, // push stick up = zoom in (tele), pull down = zoom out (wide)
   zoomSensitivity: 1.0,
   zoomMomentumEnabled: false,
   zoomMomentumGlideMs: 400,
@@ -177,6 +178,7 @@ export const DEFAULT_MAPPING: ControlMapping = {
   ptMode: "single",
   ptFineScale: 0.5,
   ptSensitivity: 1.0,
+  tiltInverted: false,
   momentumEnabled: true,
   momentumGlideMs: 400,
   momentumAccel: 0.18,
@@ -210,6 +212,7 @@ export function loadMapping(): ControlMapping {
         momentumAccel: n(parsed.momentumAccel, DEFAULT_MAPPING.momentumAccel),
         ptFineScale: n(parsed.ptFineScale, DEFAULT_MAPPING.ptFineScale),
         ptSensitivity: n(parsed.ptSensitivity, DEFAULT_MAPPING.ptSensitivity),
+        tiltInverted: parsed.tiltInverted ?? DEFAULT_MAPPING.tiltInverted,
         oneTouchFocusMode: parsed.oneTouchFocusMode ?? DEFAULT_MAPPING.oneTouchFocusMode,
         ptSpeedModifierValue: n(parsed.ptSpeedModifierValue, DEFAULT_MAPPING.ptSpeedModifierValue),
         ptSpeedModifierMode: parsed.ptSpeedModifierMode ?? DEFAULT_MAPPING.ptSpeedModifierMode,
@@ -224,7 +227,7 @@ export function loadMapping(): ControlMapping {
         irisCloseAxis: parsed.irisCloseAxis ?? DEFAULT_MAPPING.irisCloseAxis,
         zoomMode: parsed.zoomMode ?? DEFAULT_MAPPING.zoomMode,
         ptMode: parsed.ptMode ?? DEFAULT_MAPPING.ptMode,
-        zoomInverted: parsed.zoomInverted ?? false,
+        zoomInverted: parsed.zoomInverted ?? DEFAULT_MAPPING.zoomInverted,
         momentumEnabled: parsed.momentumEnabled ?? DEFAULT_MAPPING.momentumEnabled,
         presetBindings: Array.isArray(parsed.presetBindings) && parsed.presetBindings.length === 4
           ? parsed.presetBindings as [number, number, number, number]

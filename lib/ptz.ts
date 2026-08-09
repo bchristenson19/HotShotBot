@@ -1,7 +1,7 @@
 // Panasonic AW-UE70 HTTP CGI command library
 // Docs: AW-UE70 Operating Instructions / External Control Specifications
 
-export type CameraModel = "aw-ue70" | "aw-ue160" | "aw-he130";
+export type CameraModel = "aw-ue70" | "aw-ue160" | "aw-he130" | "virtual";
 
 export interface Camera {
   id: string;
@@ -11,6 +11,10 @@ export interface Camera {
   model: CameraModel;
   streamUrl?: string;
   color?: string; // hex color for the light bar, e.g. "#1d4ed8"
+}
+
+export function isVirtual(cam: Camera | null | undefined): boolean {
+  return cam?.model === "virtual";
 }
 
 const DEFAULT_CAMERA_COLORS = ["#1d4ed8", "#059669", "#dc2626", "#7c3aed"];
@@ -23,9 +27,11 @@ const STREAM_PATHS: Record<CameraModel, string> = {
   "aw-ue70":   "/cgi-bin/mjpeg?resolution=1920x1080&quality=4&framerate=30",
   "aw-ue160":  "/cgi-bin/mjpeg?resolution=1920x1080&quality=4&framerate=30",
   "aw-he130":  "/cgi-bin/mjpeg?resolution=1920x1080&quality=4&framerate=30",
+  "virtual":   "",
 };
 
 export function defaultStreamUrl(cam: Camera): string {
+  if (cam.model === "virtual") return "";
   if (!cam.ip) return "";
   const path = STREAM_PATHS[cam.model] ?? STREAM_PATHS["aw-ue70"];
   return `http://${cam.ip}${path}`;
