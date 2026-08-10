@@ -66,6 +66,14 @@ export default function Home() {
   const [showPresets, setShowPresets] = useState(false);
   const [isHud, setIsHud] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
+  // Per-camera "yield to RP-200" — when true, HotShotBot stops sending PTZ/preset
+  // commands to that camera (an RP-200 panel is driving it) but keeps polling status.
+  const [yieldedCams, setYieldedCams] = useState<Record<string, boolean>>({});
+  const yieldedCamsRef = useRef<Record<string, boolean>>({});
+  yieldedCamsRef.current = yieldedCams;
+  // Render-safe check (reads state) — for JSX. sendCmd reads yieldedCamsRef directly instead,
+  // since it's an event-loop callback and must see the latest value without re-creating on every toggle.
+  const isYielded = (camId?: string) => !!camId && !!yieldedCams[camId];
 
   useEffect(() => {
     // Detect Electron and sync HUD state — runs client-only, avoids hydration mismatch
@@ -123,10 +131,24 @@ export default function Home() {
   const activeCamTracking = activeCam ? getCamTracking(activeCam.id) : { enabled: false, shotPreset: "none" as const, speed: 1.0, deadZone: 0.03 };
   trackingEnabledRef.current = activeCamTracking.enabled;
 
+  function toggleYield(cam: typeof activeCam) {
+    if (!cam) return;
+    const nowYielded = !isYielded(cam.id);
+    setYieldedCams((prev) => ({ ...prev, [cam.id]: nowYielded }));
+    // Yielding hands PT/zoom/focus/iris fully to the RP-200 — tracking would just
+    // keep computing nudges that get dropped, so turn it off rather than let it spin.
+    if (nowYielded && getCamTracking(cam.id).enabled) {
+      multiTracking.disableTracking(cam.id);
+      setCameraTracking((prev) => ({ ...prev, [cam.id]: { ...getCamTracking(cam.id), enabled: false } }));
+    }
+  }
+
   function toggleTracking(cam: typeof activeCam) {
     if (!cam) return;
     const current = getCamTracking(cam.id);
     if (!current.enabled) {
+      if (isYielded(cam.id)) return; // yielded to RP-200 — tracking would have nothing to drive
+
       // Enable — spawn worker for this camera
       multiTracking.enableTracking(cam.id, {
         sendPT: (pan, tilt) => sendCmd(axisToPanTiltCmd(pan, tilt), `pt-track-${cam.id}`),
@@ -155,6 +177,8 @@ export default function Home() {
   const sendCmd = useCallback(
     async (cmd: string | { cmd: string; endpoint: string }, channel = "default") => {
       if (!activeCam) return;
+      // Yielded to RP-200 — the panel is driving this camera, don't fight it.
+      if (yieldedCamsRef.current[activeCam.id]) return;
       const cmdStr = typeof cmd === "string" ? cmd : cmd.cmd;
       const endpoint: "aw_ptz" | "aw_cam" = typeof cmd === "string" ? "aw_ptz" : (cmd.endpoint as "aw_ptz" | "aw_cam");
 
@@ -612,9 +636,20 @@ export default function Home() {
             </button>
           )}
           <button
+            onClick={() => toggleYield(activeCam)}
+            className={`px-4 py-1.5 rounded-lg text-sm transition-colors ${isYielded(activeCam?.id) ? "bg-amber-600 text-white" : "bg-zinc-800 hover:bg-zinc-700 text-white"}`}
+            title="Stop sending commands to this camera — let an RP-200 (or other external controller) drive it"
+          >
+            {isYielded(activeCam?.id) ? "⏸ Yielded to RP-200" : "Yield to RP-200"}
+          </button>
+          <button
             onClick={() => toggleTracking(activeCam)}
-            className={`px-4 py-1.5 rounded-lg text-sm transition-colors ${activeCamTracking.enabled ? "bg-green-600 text-white" : "bg-zinc-800 hover:bg-zinc-700 text-white"}`}
-            title="Click-to-track mode"
+            disabled={isYielded(activeCam?.id)}
+            className={`px-4 py-1.5 rounded-lg text-sm transition-colors ${
+              isYielded(activeCam?.id) ? "bg-zinc-800/50 text-zinc-600 cursor-not-allowed" :
+              activeCamTracking.enabled ? "bg-green-600 text-white" : "bg-zinc-800 hover:bg-zinc-700 text-white"
+            }`}
+            title={isYielded(activeCam?.id) ? "Yielded to RP-200 — un-yield to track" : "Click-to-track mode"}
           >
             Track <span className="opacity-60 text-xs">(β)</span>
           </button>
