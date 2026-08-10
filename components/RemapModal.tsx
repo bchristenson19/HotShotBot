@@ -313,6 +313,37 @@ export default function RemapModal({ mapping, onChange, onClose }: Props) {
                 </Row>
               </div>
 
+              {/* ── Iris ───────────────────────────────────── */}
+              <GroupLabel>Iris</GroupLabel>
+
+              <div className="bg-zinc-800 rounded-xl p-4 space-y-3">
+                <Row label="Open trigger" description="Trigger that opens the iris while manual">
+                  <select
+                    value={draft.irisOpenAxis ?? "none"}
+                    onChange={(e) => setDraft((d) => ({ ...d, irisOpenAxis: e.target.value === "none" ? null : e.target.value as typeof d.irisOpenAxis }))}
+                    className="bg-zinc-700 text-white rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 shrink-0"
+                  >
+                    <option value="none">Disabled</option>
+                    <option value="l2">L2</option>
+                    <option value="r2">R2</option>
+                  </select>
+                </Row>
+                <Row label="Close trigger" description="Trigger that closes the iris while manual">
+                  <select
+                    value={draft.irisCloseAxis ?? "none"}
+                    onChange={(e) => setDraft((d) => ({ ...d, irisCloseAxis: e.target.value === "none" ? null : e.target.value as typeof d.irisCloseAxis }))}
+                    className="bg-zinc-700 text-white rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 shrink-0"
+                  >
+                    <option value="none">Disabled</option>
+                    <option value="l2">L2</option>
+                    <option value="r2">R2</option>
+                  </select>
+                </Row>
+                <p className="text-zinc-500 text-xs">
+                  Trigger-based iris only fires while Iris is in Manual mode (Controls overlay or the Iris Auto Toggle action). Set a trigger to Disabled to free it up for other uses.
+                </p>
+              </div>
+
               {/* ── Focus ──────────────────────────────────── */}
               <GroupLabel>Focus</GroupLabel>
 

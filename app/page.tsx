@@ -540,9 +540,9 @@ export default function Home() {
 
       // Iris — skip if auto iris on, or triggers claimed by zoom/brake
       if (!autoIrisRef.current) {
-        // Trigger-based
-        const irisOpen = axisValue(m.irisOpenAxis);
-        const irisClose = axisValue(m.irisCloseAxis);
+        // Trigger-based — axis may be unassigned ("None"), in which case it never fires
+        const irisOpen = m.irisOpenAxis ? axisValue(m.irisOpenAxis) : 0;
+        const irisClose = m.irisCloseAxis ? axisValue(m.irisCloseAxis) : 0;
         const r2Claimed = m.ptBrakeAxis === "r2" || m.zoomMode === "triggers";
         const l2Claimed = m.ptBrakeAxis === "l2" || m.zoomMode === "triggers";
 
