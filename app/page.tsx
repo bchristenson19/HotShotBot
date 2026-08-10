@@ -8,6 +8,7 @@ import ProfilesModal from "@/components/ProfilesModal";
 import PresetManager from "@/components/PresetManager";
 import ControllerVisualizer from "@/components/ControllerVisualizer";
 import CameraFeed from "@/components/CameraFeed";
+import MultiviewGrid from "@/components/MultiviewGrid";
 import FrameCapture from "@/components/FrameCapture";
 import { useMultiCameraTracking } from "@/hooks/useMultiCameraTracking";
 import { useCameraStatus } from "@/hooks/useCameraStatus";
@@ -66,6 +67,7 @@ export default function Home() {
   const trackingEnabledRef = useRef(false);
   const [showProfiles, setShowProfiles] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
+  const [showMultiview, setShowMultiview] = useState(false);
   const [isHud, setIsHud] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
   // Per-camera "yield to RP-200" — when true, HotShotBot stops sending PTZ/preset
@@ -707,6 +709,17 @@ export default function Home() {
             Controls
           </button>
           <button
+            onClick={() => setShowMultiview((v) => !v)}
+            disabled={cameras.length < 2}
+            title={cameras.length < 2 ? "Add another camera to enable multiview" : "Show all cameras at once"}
+            className={`px-4 py-1.5 rounded-lg text-sm transition-colors ${
+              cameras.length < 2 ? "bg-zinc-800/50 text-zinc-600 cursor-not-allowed" :
+              showMultiview ? "bg-blue-600 text-white" : "bg-zinc-800 hover:bg-zinc-700 text-white"
+            }`}
+          >
+            Multiview
+          </button>
+          <button
             onClick={() => setShowPresets(true)}
             className="bg-zinc-800 hover:bg-zinc-700 px-4 py-1.5 rounded-lg text-sm transition-colors"
           >
@@ -804,27 +817,40 @@ export default function Home() {
             )}
           </div>
 
-          {/* Live feed */}
-          <CameraFeed
-            camera={activeCam}
-            autoFocus={autoFocus}
-            gain={gainToDb(gainHex)}
-            status={cameraStatus ?? null}
-            statusError={cameraStatusError}
-            showControls={showControlsOverlay}
-            padState={padState}
-            mapping={mapping}
-            profileName={activeProfileName}
-            virtualController={activeCam && isVirtual(activeCam) ? virtualPtz.getController(activeCam.id) : null}
-            trackingEnabled={activeCamTracking.enabled}
-            workerReady={activeCam ? (multiTracking.getState(activeCam.id).workerReady) : false}
-            detections={activeCam ? (multiTracking.getState(activeCam.id).detections) : []}
-            trackingState={activeCam ? (multiTracking.getState(activeCam.id).trackingState) : "idle"}
-            lockedBox={activeCam ? (multiTracking.getState(activeCam.id).lockedBox) : null}
-            onSendFrame={(imageData, w, h) => activeCam && multiTracking.sendFrame(activeCam.id, imageData, w, h, activeCamTracking.speed, activeCamTracking.shotPreset, activeCamTracking.deadZone)}
-            onLockTarget={(box) => activeCam && multiTracking.lockTarget(activeCam.id, box)}
-            onClearLock={() => activeCam && multiTracking.clearLock(activeCam.id)}
-          />
+          {/* Live feed — multiview shows every camera at once; click a tile to make it active */}
+          {showMultiview ? (
+            <MultiviewGrid
+              cameras={cameras}
+              activeCamIndex={activeCamIndex}
+              onSelect={(i) => setActiveCamIndex(i)}
+              getVirtualController={(camId) => virtualPtz.getController(camId)}
+              getTrackingInfo={(camId) => ({
+                enabled: getCamTracking(camId).enabled,
+                state: multiTracking.getState(camId).trackingState,
+              })}
+            />
+          ) : (
+            <CameraFeed
+              camera={activeCam}
+              autoFocus={autoFocus}
+              gain={gainToDb(gainHex)}
+              status={cameraStatus ?? null}
+              statusError={cameraStatusError}
+              showControls={showControlsOverlay}
+              padState={padState}
+              mapping={mapping}
+              profileName={activeProfileName}
+              virtualController={activeCam && isVirtual(activeCam) ? virtualPtz.getController(activeCam.id) : null}
+              trackingEnabled={activeCamTracking.enabled}
+              workerReady={activeCam ? (multiTracking.getState(activeCam.id).workerReady) : false}
+              detections={activeCam ? (multiTracking.getState(activeCam.id).detections) : []}
+              trackingState={activeCam ? (multiTracking.getState(activeCam.id).trackingState) : "idle"}
+              lockedBox={activeCam ? (multiTracking.getState(activeCam.id).lockedBox) : null}
+              onSendFrame={(imageData, w, h) => activeCam && multiTracking.sendFrame(activeCam.id, imageData, w, h, activeCamTracking.speed, activeCamTracking.shotPreset, activeCamTracking.deadZone)}
+              onLockTarget={(box) => activeCam && multiTracking.lockTarget(activeCam.id, box)}
+              onClearLock={() => activeCam && multiTracking.clearLock(activeCam.id)}
+            />
+          )}
 
           {/* Controller visualizer */}
           <ControllerVisualizer
