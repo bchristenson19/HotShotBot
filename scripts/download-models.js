@@ -13,6 +13,9 @@ fs.mkdirSync(MODEL_OUT, { recursive: true });
 function headSize(url) {
   return new Promise((resolve, reject) => {
     https.get(url, { method: "HEAD" }, (res) => {
+      // HEAD responses have no body, but the socket won't be freed — and the
+      // process won't exit — until the response stream is drained.
+      res.resume();
       if (res.statusCode === 301 || res.statusCode === 302) {
         headSize(res.headers.location).then(resolve, reject);
         return;
