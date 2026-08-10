@@ -180,6 +180,13 @@ export default function RemapModal({ mapping, onChange, onClose }: Props) {
                 )}
               </div>
 
+              <div className="bg-zinc-800 rounded-xl p-4">
+                <Row label="Swap sticks" description="Left stick takes over the right stick's job and vice versa">
+                  <Toggle checked={draft.sticksSwapped}
+                    onChange={() => setDraft((d) => ({ ...d, sticksSwapped: !d.sticksSwapped }))} />
+                </Row>
+              </div>
+
               <div className="bg-zinc-800 rounded-xl p-4 space-y-3">
                 <Row label="Sensitivity" description="Scales left stick output">
                   <span className="text-sm text-blue-400 font-mono shrink-0">{Math.round(draft.ptSensitivity * 100)}%</span>

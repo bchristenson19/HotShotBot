@@ -61,6 +61,8 @@ export default function Home() {
   const [showControlsOverlay, setShowControlsOverlay] = useState(false);
   // Per-camera tracking config
   const [cameraTracking, setCameraTracking] = useState<Record<string, { enabled: boolean; shotPreset: import("@/hooks/useTracking").ShotPreset; speed: number; deadZone: number }>>({});
+  const cameraTrackingRef = useRef(cameraTracking);
+  cameraTrackingRef.current = cameraTracking;
   const trackingEnabledRef = useRef(false);
   const [showProfiles, setShowProfiles] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
@@ -118,6 +120,8 @@ export default function Home() {
   }, []);
 
   const activeCam = cameras[activeCamIndex] ?? cameras[0];
+  const activeCamRef = useRef(activeCam);
+  activeCamRef.current = activeCam;
   useElectronLightBar(activeCam?.color);
 
   const multiTracking = useMultiCameraTracking();
@@ -131,17 +135,19 @@ export default function Home() {
   const activeCamTracking = activeCam ? getCamTracking(activeCam.id) : { enabled: false, shotPreset: "none" as const, speed: 1.0, deadZone: 0.03 };
   trackingEnabledRef.current = activeCamTracking.enabled;
 
-  function toggleYield(cam: typeof activeCam) {
+  const toggleYield = useCallback((cam: typeof activeCam) => {
     if (!cam) return;
-    const nowYielded = !isYielded(cam.id);
+    // Read refs, not state — this can be called from onFrame's memoized callback,
+    // which may be holding a stale closure over state from an earlier render.
+    const nowYielded = !yieldedCamsRef.current[cam.id];
     setYieldedCams((prev) => ({ ...prev, [cam.id]: nowYielded }));
     // Yielding hands PT/zoom/focus/iris fully to the RP-200 — tracking would just
     // keep computing nudges that get dropped, so turn it off rather than let it spin.
-    if (nowYielded && getCamTracking(cam.id).enabled) {
+    if (nowYielded && cameraTrackingRef.current[cam.id]?.enabled) {
       multiTracking.disableTracking(cam.id);
-      setCameraTracking((prev) => ({ ...prev, [cam.id]: { ...getCamTracking(cam.id), enabled: false } }));
+      setCameraTracking((prev) => ({ ...prev, [cam.id]: { ...prev[cam.id], enabled: false } }));
     }
-  }
+  }, [multiTracking]);
 
   function toggleTracking(cam: typeof activeCam) {
     if (!cam) return;
@@ -242,6 +248,13 @@ export default function Home() {
       const m = mappingRef.current;
       const pressed = (key: keyof GamepadState) => state[key] && !prev[key];
 
+      // Stick swap — remaps which physical stick drives which axis, applied before
+      // any pan/tilt/zoom/focus logic reads an axis. Triggers (l2/r2) aren't sticks, unaffected.
+      const SWAPPED_AXIS: Partial<Record<keyof GamepadState, keyof GamepadState>> = m.sticksSwapped
+        ? { leftX: "rightX", leftY: "rightY", rightX: "leftX", rightY: "leftY" }
+        : {};
+      const axisValue = (id: keyof GamepadState) => state[SWAPPED_AXIS[id] ?? id] as number;
+
       // Helper: what action is assigned to this button?
       const btnAction = (key: keyof typeof m.buttons) => m.buttons[key];
 
@@ -255,6 +268,10 @@ export default function Home() {
         switch (action) {
           case "cycleCamera":
             setActiveCamIndex((i) => (i + 1) % cameras.length);
+            break;
+          case "toggleYield":
+            toggleYield(activeCamRef.current);
+            rumble(0.4, 0.2, 60);
             break;
           case "cycleWB":
             setWbIndex((i) => {
@@ -403,16 +420,16 @@ export default function Home() {
       let tiltTarget: number;
 
       if (m.ptMode === "dual") {
-        panTarget = state.leftX * m.ptSensitivity + state.rightX * m.ptFineScale;
-        tiltTarget = state.leftY * m.ptSensitivity + state.rightY * m.ptFineScale;
+        panTarget = axisValue("leftX") * m.ptSensitivity + axisValue("rightX") * m.ptFineScale;
+        tiltTarget = axisValue("leftY") * m.ptSensitivity + axisValue("rightY") * m.ptFineScale;
         panTarget = Math.max(-1, Math.min(1, panTarget));
         tiltTarget = Math.max(-1, Math.min(1, tiltTarget));
         // Show combined magnitude as throttle display
         const pct = { pan: Math.round(panTarget * 100), tilt: Math.round(tiltTarget * 100) };
         setThrottleDisplay(pct);
       } else {
-        panTarget = (state[m.panTiltAxis.x] as number) * m.ptSensitivity;
-        tiltTarget = (state[m.panTiltAxis.y] as number) * m.ptSensitivity;
+        panTarget = axisValue(m.panTiltAxis.x) * m.ptSensitivity;
+        tiltTarget = axisValue(m.panTiltAxis.y) * m.ptSensitivity;
       }
 
       // D-pad overrides
@@ -435,7 +452,7 @@ export default function Home() {
 
       // R2 brake — disabled when triggers are used for zoom
       if (m.ptBrakeAxis && m.zoomMode !== "triggers") {
-        const brake = state[m.ptBrakeAxis] as number;
+        const brake = axisValue(m.ptBrakeAxis);
         if (brake > 0.01) {
           const multiplier = 1 - brake * (1 - m.ptBrakeMinSpeed);
           panTarget *= multiplier;
@@ -491,7 +508,7 @@ export default function Home() {
       } else if (m.zoomMode === "triggers") {
         rawZoom = (state.l2 - state.r2) * (m.zoomInverted ? -1 : 1);
       } else {
-        rawZoom = (state[m.zoomAxis] as number) * (m.zoomInverted ? -1 : 1);
+        rawZoom = axisValue(m.zoomAxis) * (m.zoomInverted ? -1 : 1);
       }
 
       // Apply sensitivity + optional speed modifier
@@ -518,14 +535,14 @@ export default function Home() {
 
       // Focus — right stick unavailable in dual PT mode
       if (!autoFocusRef.current && m.ptMode !== "dual") {
-        sendContinuous(axisToFocusCmd(state[m.focusAxis] as number), "focus");
+        sendContinuous(axisToFocusCmd(axisValue(m.focusAxis)), "focus");
       }
 
       // Iris — skip if auto iris on, or triggers claimed by zoom/brake
       if (!autoIrisRef.current) {
         // Trigger-based
-        const irisOpen = state[m.irisOpenAxis] as number;
-        const irisClose = state[m.irisCloseAxis] as number;
+        const irisOpen = axisValue(m.irisOpenAxis);
+        const irisClose = axisValue(m.irisCloseAxis);
         const r2Claimed = m.ptBrakeAxis === "r2" || m.zoomMode === "triggers";
         const l2Claimed = m.ptBrakeAxis === "l2" || m.zoomMode === "triggers";
 
@@ -548,7 +565,7 @@ export default function Home() {
 
       prevButtons.current = { ...state };
     },
-    [cameras.length, sendCmd, sendContinuous]
+    [cameras.length, sendCmd, sendContinuous, toggleYield]
   );
 
   const { waitingForPress } = useGamepad(onFrame);
