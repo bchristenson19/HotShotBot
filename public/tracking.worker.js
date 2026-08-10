@@ -96,16 +96,29 @@ async function processFrame(imageData, width, height, speed, shotPreset, deadZon
       return;
     }
 
-    // Find best match by center proximity
+    // Find best match by position AND size, gated tightly enough that a
+    // different person walking near the locked one can't hijack the lock —
+    // center-distance alone (old behavior) allowed matches nearly half the
+    // frame away, so tracking would jump to whoever was nearest, not
+    // necessarily the person originally clicked.
     const lx = lockedBox.x + lockedBox.w / 2;
     const ly = lockedBox.y + lockedBox.h / 2;
-    let best = null, bestDist = Infinity;
+    const lh = lockedBox.h;
+    // Positional tolerance scales with the locked box's own height — a
+    // person close to camera (tall box) can shift further between frames in
+    // normalized units than one far away (short box).
+    const posTolerance = Math.max(0.08, lh * 0.6);
+    let best = null, bestCost = Infinity;
     for (const d of dets) {
       const dist = Math.hypot((d.x + d.w / 2) - lx, (d.y + d.h / 2) - ly);
-      if (dist < bestDist) { bestDist = dist; best = d; }
+      if (dist > posTolerance) continue;
+      const sizeRatio = d.h / lh;
+      if (sizeRatio < 0.5 || sizeRatio > 2.0) continue; // different-sized person, not the same one closer/further
+      const cost = dist / posTolerance + Math.abs(Math.log(sizeRatio));
+      if (cost < bestCost) { bestCost = cost; best = d; }
     }
 
-    if (!best || bestDist > 0.6) {
+    if (!best) {
       postMessage({ type: "result", detections: dets, trackingState: "lost", lockedBox, pan: 0, tilt: 0, zoom: 0 });
       return;
     }
