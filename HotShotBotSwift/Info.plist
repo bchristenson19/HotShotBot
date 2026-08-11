@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>HotShotBotSwift</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.hotshotbot.swift</string>
+	<key>CFBundleName</key>
+	<string>HotShotBotSwift</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- Required for macOS's Local Network privacy permission: without this, and without a
+	     real app bundle at all, the OS silently blocks connections to LAN IPs (e.g. the
+	     Panasonic camera) rather than prompting — URLSession then reports the generic
+	     "Internet connection appears to be offline" (NSURLErrorNotConnectedToInternet, code
+	     -1009) with an underlying NWPath reason of "Local network prohibited". -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>HotShotBot connects to Panasonic PTZ cameras on your local network to send pan/tilt/zoom commands and receive the live video feed.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
+</dict>
+</plist>
