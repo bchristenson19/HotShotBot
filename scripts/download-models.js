@@ -9,9 +9,37 @@ const MODEL_OUT = path.join(OUT, "models/coco-ssd");
 fs.mkdirSync(OUT, { recursive: true });
 fs.mkdirSync(MODEL_OUT, { recursive: true });
 
-function download(url, dest) {
+// Resolves the expected byte size of a URL via a HEAD request, following redirects.
+function headSize(url) {
   return new Promise((resolve, reject) => {
-    if (fs.existsSync(dest)) { console.log(`  skip (exists): ${path.basename(dest)}`); resolve(); return; }
+    https.get(url, { method: "HEAD" }, (res) => {
+      // HEAD responses have no body, but the socket won't be freed — and the
+      // process won't exit — until the response stream is drained.
+      res.resume();
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        headSize(res.headers.location).then(resolve, reject);
+        return;
+      }
+      const len = parseInt(res.headers["content-length"] ?? "", 10);
+      resolve(Number.isFinite(len) ? len : null);
+    }).on("error", reject);
+  });
+}
+
+// Downloads url to dest, skipping only if an existing file's size already matches
+// the remote's Content-Length — a merely-existing file may be a truncated leftover
+// from an interrupted run, so existence alone isn't proof of completeness.
+async function download(url, dest) {
+  const expected = await headSize(url);
+  if (fs.existsSync(dest)) {
+    const actual = fs.statSync(dest).size;
+    if (expected === null || actual === expected) {
+      console.log(`  skip (verified): ${path.basename(dest)}`);
+      return;
+    }
+    console.log(`  redownloading (${actual}/${expected} bytes, incomplete): ${path.basename(dest)}`);
+  }
+  return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
     https.get(url, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
@@ -19,8 +47,23 @@ function download(url, dest) {
         download(res.headers.location, dest).then(resolve).catch(reject);
         return;
       }
+      if (res.statusCode !== 200) {
+        file.close(); fs.unlinkSync(dest);
+        reject(new Error(`${url} → HTTP ${res.statusCode}`));
+        return;
+      }
       res.pipe(file);
-      file.on("finish", () => { file.close(); console.log(`  ✓ ${path.basename(dest)}`); resolve(); });
+      file.on("finish", () => {
+        file.close();
+        const actual = fs.statSync(dest).size;
+        if (expected !== null && actual !== expected) {
+          fs.unlinkSync(dest);
+          reject(new Error(`${url} → downloaded ${actual} bytes, expected ${expected}`));
+          return;
+        }
+        console.log(`  ✓ ${path.basename(dest)}`);
+        resolve();
+      });
     }).on("error", (e) => { fs.unlinkSync(dest); reject(e); });
   });
 }

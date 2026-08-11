@@ -68,6 +68,7 @@
     "files": [
       "electron-dist/**/*",
       ".next/**/*",
+      "public/**/*",
       "node_modules/**/*",
       "package.json"
     ],

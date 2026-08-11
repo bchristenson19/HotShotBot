@@ -1,6 +1,7 @@
 // Controller button/axis mapping configuration
 
 export type ActionId =
+  | "none"
   | "panTilt"
   | "zoom"
   | "focus"
@@ -16,6 +17,7 @@ export type ActionId =
   | "oneTouchFocus"
   | "cycleCamera"
   | "cycleWB"
+  | "toggleYield"
   | "macro1"
   | "macro2"
   | "macro3"
@@ -59,8 +61,8 @@ export interface ControlMapping {
   panTiltAxis: { x: AxisId; y: AxisId };
   zoomAxis: AxisId;
   focusAxis: AxisId;
-  irisOpenAxis: AxisId;
-  irisCloseAxis: AxisId;
+  irisOpenAxis: AxisId | null;
+  irisCloseAxis: AxisId | null;
   // When set, this trigger axis acts as a speed brake for pan/tilt.
   // 0 = full speed, 1 = minBrakeSpeed (precision crawl).
   oneTouchFocusMode: "pulse" | "hold";
@@ -80,6 +82,7 @@ export interface ControlMapping {
   ptFineScale: number;
   ptSensitivity: number; // 0.1–1.0 multiplier on the left stick output
   tiltInverted: boolean; // flips tilt direction (push up = tilt down)
+  sticksSwapped: boolean; // swaps left/right stick axes at the input layer, before any PT/zoom/focus mapping
   momentumEnabled: boolean;
   momentumGlideMs: number;  // how long (ms) velocity takes to reach ~0 after release
   momentumAccel: number;    // 0–1, how quickly velocity tracks the stick (1 = instant)
@@ -89,6 +92,7 @@ export interface ControlMapping {
 }
 
 export const ACTION_LABELS: Record<ActionId, string> = {
+  none: "None",
   panTilt: "Pan / Tilt",
   zoom: "Zoom",
   focus: "Focus",
@@ -104,6 +108,7 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   oneTouchFocus: "One-Touch Focus",
   cycleCamera: "Cycle Camera",
   cycleWB: "Cycle White Balance",
+  toggleYield: "Toggle Yield to RP-200",
   macro1: "Macro 1",
   macro2: "Macro 2",
   macro3: "Macro 3",
@@ -133,8 +138,10 @@ export const BUTTON_IDS: ButtonId[] = [
 ];
 
 export const BUTTON_ACTIONS: ActionId[] = [
+  "none",
   "recallPreset1", "recallPreset2", "recallPreset3", "recallPreset4",
   "saveModifier", "ptSpeedModifier", "toggleAutoFocus", "oneTouchFocus", "cycleCamera", "cycleWB",
+  "toggleYield",
   "finePanTilt",
   "macro1", "macro2", "macro3", "macro4",
   "irisOpenBtn", "irisCloseBtn", "irisAutoToggle",
@@ -179,6 +186,7 @@ export const DEFAULT_MAPPING: ControlMapping = {
   ptFineScale: 0.5,
   ptSensitivity: 1.0,
   tiltInverted: false,
+  sticksSwapped: false,
   momentumEnabled: true,
   momentumGlideMs: 400,
   momentumAccel: 0.18,
@@ -213,6 +221,7 @@ export function loadMapping(): ControlMapping {
         ptFineScale: n(parsed.ptFineScale, DEFAULT_MAPPING.ptFineScale),
         ptSensitivity: n(parsed.ptSensitivity, DEFAULT_MAPPING.ptSensitivity),
         tiltInverted: parsed.tiltInverted ?? DEFAULT_MAPPING.tiltInverted,
+        sticksSwapped: parsed.sticksSwapped ?? DEFAULT_MAPPING.sticksSwapped,
         oneTouchFocusMode: parsed.oneTouchFocusMode ?? DEFAULT_MAPPING.oneTouchFocusMode,
         ptSpeedModifierValue: n(parsed.ptSpeedModifierValue, DEFAULT_MAPPING.ptSpeedModifierValue),
         ptSpeedModifierMode: parsed.ptSpeedModifierMode ?? DEFAULT_MAPPING.ptSpeedModifierMode,
@@ -223,8 +232,8 @@ export function loadMapping(): ControlMapping {
         ptBrakeAxis: parsed.ptBrakeAxis ?? DEFAULT_MAPPING.ptBrakeAxis,
         zoomAxis: parsed.zoomAxis ?? DEFAULT_MAPPING.zoomAxis,
         focusAxis: parsed.focusAxis ?? DEFAULT_MAPPING.focusAxis,
-        irisOpenAxis: parsed.irisOpenAxis ?? DEFAULT_MAPPING.irisOpenAxis,
-        irisCloseAxis: parsed.irisCloseAxis ?? DEFAULT_MAPPING.irisCloseAxis,
+        irisOpenAxis: parsed.irisOpenAxis !== undefined ? parsed.irisOpenAxis : DEFAULT_MAPPING.irisOpenAxis,
+        irisCloseAxis: parsed.irisCloseAxis !== undefined ? parsed.irisCloseAxis : DEFAULT_MAPPING.irisCloseAxis,
         zoomMode: parsed.zoomMode ?? DEFAULT_MAPPING.zoomMode,
         ptMode: parsed.ptMode ?? DEFAULT_MAPPING.ptMode,
         zoomInverted: parsed.zoomInverted ?? DEFAULT_MAPPING.zoomInverted,
