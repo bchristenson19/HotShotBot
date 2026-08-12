@@ -48,6 +48,7 @@ enum ButtonActionId: String, Codable, CaseIterable, Hashable {
     case toggleYield
     case finePanTilt
     case cycleCamera
+    case toggleTracking
 
     var label: String {
         switch self {
@@ -57,6 +58,7 @@ enum ButtonActionId: String, Codable, CaseIterable, Hashable {
         case .toggleYield: return "Toggle Yield to RP-200"
         case .finePanTilt: return "Fine Pan/Tilt"
         case .cycleCamera: return "Cycle Camera"
+        case .toggleTracking: return "Toggle AI Tracking"
         }
     }
 }
@@ -88,10 +90,13 @@ enum TriggerId: String, Codable, CaseIterable {
 /// this app has no preset-save feature yet for `saveModifier` to gate anyway).
 struct ControlMapping: Codable, Equatable {
     /// Matches the user's real Electron button layout (screenshotted 2026-08-10), translated
-    /// for the two deltas above. cross/circle/square/l1/r1 are intentionally absent (unbound) —
-    /// a missing key reads as `.none` via `buttons[button] ?? .none` wherever this is consulted.
+    /// for the two deltas above, plus `.square: .toggleTracking` (a new default binding — square
+    /// was unbound in the Electron layout and has no milestone-1 equivalent to preserve).
+    /// cross/circle/l1/r1 are intentionally absent (unbound) — a missing key reads as `.none`
+    /// via `buttons[button] ?? .none` wherever this is consulted.
     var buttons: [ButtonId: ButtonActionId] = [
         .triangle: .toggleYield,
+        .square: .toggleTracking,
         .l3: .oneTouchFocus,
         .r3: .toggleAutoFocus,
         .dpadUp: .finePanTilt,
@@ -106,6 +111,16 @@ struct ControlMapping: Codable, Equatable {
 
     // Pan/tilt
     var sticksSwapped: Bool = true
+    // Zeroes a raw stick axis (leftX/Y, rightX/Y — both sticks, since either can end up driving
+    // pan/tilt or zoom depending on `sticksSwapped`) when its magnitude is at or below this,
+    // BEFORE sensitivity/D-pad/tilt-invert/modifier/brake/momentum ever see it. Exists
+    // specifically for worn/older controllers whose sticks don't return exactly to center —
+    // applying it to the raw axis (rather than only gating momentum's internal "is it moving"
+    // check, which does nothing when momentum is disabled) is what actually stops that drift
+    // from becoming camera movement. Distinct from PTZControlLoop's own small fixed
+    // `momentumMovingThreshold`, which is an unrelated numerical-stability constant, not a
+    // hardware-drift setting.
+    var stickDeadzone: Double = 0.05
     var ptSensitivity: Double = 0.60          // Electron: 60%
     var tiltInverted: Bool = false            // Electron: off
     var momentumEnabled: Bool = true          // Electron: on
@@ -172,7 +187,7 @@ struct ControlMapping: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case buttons, oneTouchFocusMode
-        case sticksSwapped, ptSensitivity, tiltInverted, momentumEnabled, momentumGlideMs, momentumAccel
+        case sticksSwapped, stickDeadzone, ptSensitivity, tiltInverted, momentumEnabled, momentumGlideMs, momentumAccel
         case dpadFineSpeed
         case speedModifierButton, speedModifierValue, speedModifierAffectsZoom, modifierEaseRate
         case brakeTrigger, brakeMinSpeed
@@ -194,6 +209,7 @@ struct ControlMapping: Codable, Equatable {
         buttons = try c.decodeIfPresent([ButtonId: ButtonActionId].self, forKey: .buttons) ?? d.buttons
         oneTouchFocusMode = try c.decodeIfPresent(OneTouchFocusMode.self, forKey: .oneTouchFocusMode) ?? d.oneTouchFocusMode
         sticksSwapped = try c.decodeIfPresent(Bool.self, forKey: .sticksSwapped) ?? d.sticksSwapped
+        stickDeadzone = try c.decodeIfPresent(Double.self, forKey: .stickDeadzone) ?? d.stickDeadzone
         ptSensitivity = try c.decodeIfPresent(Double.self, forKey: .ptSensitivity) ?? d.ptSensitivity
         tiltInverted = try c.decodeIfPresent(Bool.self, forKey: .tiltInverted) ?? d.tiltInverted
         momentumEnabled = try c.decodeIfPresent(Bool.self, forKey: .momentumEnabled) ?? d.momentumEnabled

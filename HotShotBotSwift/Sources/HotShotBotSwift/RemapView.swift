@@ -111,6 +111,9 @@ struct RemapView: View {
             groupBox("Sticks") {
                 Toggle("Swap sticks", isOn: $draft.sticksSwapped)
                 Text("Left stick takes over the right stick's job and vice versa.").font(.caption).foregroundStyle(.secondary)
+                percentSlider("Dead zone", value: $draft.stickDeadzone, range: 0.01...0.25)
+                Text("Raise this if an older controller's sticks drift instead of resting dead center.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             groupBox("D-Pad Fine Pan/Tilt") {

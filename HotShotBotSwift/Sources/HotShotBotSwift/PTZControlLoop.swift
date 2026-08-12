@@ -26,7 +26,21 @@ final class PTZControlLoop: ObservableObject {
 
     private var cancellable: AnyCancellable?
 
-    private let stickDeadzone = 0.05
+    /// Threshold for momentum's own "is the target far enough from zero to bother lerping
+    /// toward it, vs. decaying toward 0" decision — a small fixed numerical-stability constant,
+    /// NOT the user-facing drift/deadzone setting (`ControlMapping.stickDeadzone`, applied to the
+    /// raw stick axes themselves in `handle(_:)` below, well before this check ever sees them).
+    /// Deliberately left un-configurable and unrelated to stick hardware: this also has to stay
+    /// small enough that a D-pad-driven `dpadFineSpeed` nudge (as low as ~0.05 in Remap) still
+    /// registers as "moving" regardless of how high someone's cranked their stick deadzone.
+    private let momentumMovingThreshold = 0.05
+
+    /// Zeroes a raw stick axis reading at or below `ControlMapping.stickDeadzone` — see that
+    /// field's doc comment. Applied to `leftX`/`leftY`/`rightX`/`rightY` before anything else
+    /// (sensitivity, D-pad override, tilt-invert, modifier, brake, momentum) ever sees them.
+    private func deadzoned(_ value: Double, _ deadZone: Double) -> Double {
+        abs(value) <= deadZone ? 0 : value
+    }
 
     /// Wall-clock time of the previous poll tick, used to compute `dt` for the glide's
     /// exponential decay — mirrors `lastFrameTime` in app/page.tsx (there driven by
@@ -105,6 +119,8 @@ final class PTZControlLoop: ObservableObject {
                 client.toggleYield()
             case .cycleCamera:
                 sessionStore.cycleActive()
+            case .toggleTracking:
+                session.tracker.isEnabled.toggle()
             }
         }
 
@@ -184,8 +200,11 @@ final class PTZControlLoop: ObservableObject {
         } else {
             // Pan/tilt stick: left by default, right when swapped — matching DEFAULT_MAPPING
             // .panTiltAxis in lib/mapping.ts fed through app/page.tsx's SWAPPED_AXIS remap.
-            var panTarget = (m.sticksSwapped ? state.rightX : state.leftX) * m.ptSensitivity
-            var tiltTarget = (m.sticksSwapped ? state.rightY : state.leftY) * m.ptSensitivity
+            // Raw axis is deadzoned (see ControlMapping.stickDeadzone) before sensitivity scales
+            // it, so a drifting stick reads as exactly centered rather than a small, scaled-down
+            // creep.
+            var panTarget = deadzoned(m.sticksSwapped ? state.rightX : state.leftX, m.stickDeadzone) * m.ptSensitivity
+            var tiltTarget = deadzoned(m.sticksSwapped ? state.rightY : state.leftY, m.stickDeadzone) * m.ptSensitivity
 
             // D-pad "fine pan/tilt" override — checked every tick against current held state
             // (level-based, not press-edge), each of the four directions independent since they
@@ -214,8 +233,8 @@ final class PTZControlLoop: ObservableObject {
             // toward 0 (half-life = momentumGlideMs) once released — exact port of app/page.tsx's
             // momentum block, including its 0.01 snap-to-zero noise floor.
             if m.momentumEnabled {
-                let panMoving = abs(panTarget) > stickDeadzone
-                let tiltMoving = abs(tiltTarget) > stickDeadzone
+                let panMoving = abs(panTarget) > momentumMovingThreshold
+                let tiltMoving = abs(tiltTarget) > momentumMovingThreshold
                 let decayPerMs = log(2) / m.momentumGlideMs
                 let decayFactor = exp(-decayPerMs * dt)
 
@@ -247,7 +266,7 @@ final class PTZControlLoop: ObservableObject {
         // app/page.tsx's `zoomModifier`, and the brake (see above) always scales zoom too. L2/R2
         // trigger-based zoom (the mapping's "triggers" zoomMode) is not wired up in this
         // milestone's minimal control loop.
-        let rawZoom = (m.sticksSwapped ? state.leftY : state.rightY) * (m.zoomInverted ? -1 : 1)
+        let rawZoom = deadzoned(m.sticksSwapped ? state.leftY : state.rightY, m.stickDeadzone) * (m.zoomInverted ? -1 : 1)
         // Reuses the already-eased session.currentModifierScale (not a fresh modifierHeld ?
         // value : 1 step) so zoom eases in and out exactly like pan/tilt does above — leaving
         // this one abrupt while pan/tilt eases would have been an inconsistent half-fix.
@@ -257,7 +276,7 @@ final class PTZControlLoop: ObservableObject {
         // Zoom momentum — same half-life decay model as pan/tilt, gated by its own enable flag
         // and glide time (Electron: on, 400ms, matching the user's saved config).
         if m.zoomMomentumEnabled {
-            let zoomMoving = abs(zoomTarget) > stickDeadzone
+            let zoomMoving = abs(zoomTarget) > momentumMovingThreshold
             let decayPerMs = log(2) / m.zoomMomentumGlideMs
             let decayFactor = exp(-decayPerMs * dt)
             session.zoomVelocity = zoomMoving ? session.zoomVelocity + (zoomTarget - session.zoomVelocity) * m.momentumAccel : session.zoomVelocity * decayFactor
