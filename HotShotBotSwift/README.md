@@ -3,7 +3,8 @@
 Native macOS Swift/SwiftUI rewrite of HotShotBot, starting from scratch. **Milestone 1** was
 DualSense stick input → Panasonic CGI commands → live MJPEG feed, for a single real camera.
 **Milestone 2** (this update) added AI person tracking, a DualSense gyro-driven fine-adjust
-mode, tuned D-pad/speed-modifier control feel, and multi-camera support with a multiview grid.
+mode, tuned D-pad/speed-modifier/stick-deadzone control feel, and multi-camera support with a
+multiview grid.
 It lives alongside the existing Electron/Next.js app (`app/`, `electron/`, `lib/`, etc. at the
 repo root) on the `swift` branch — the Electron app is untouched and stays as reference while
 this native version grows.
@@ -41,9 +42,14 @@ this native version grows.
 configurable in Remap) to drive pan/tilt directly from the DualSense's gyro rotation rate
 (`GCController.motion`) instead of the stick, for very fine framing nudges — bypasses the
 stick, D-pad, speed modifier, brake, and momentum entirely (a nudge like this should feel
-immediate, not glide). New entirely for this milestone; no equivalent in the Electron app. Axis
-mapping/sign (`GyroAxisMapping` in `GamepadInput.swift`) is a best guess pending real-hardware
-verification — see "Known unknowns."
+immediate, not glide). New entirely for this milestone; no equivalent in the Electron app.
+**Confirmed working on a real DualSense** — `GCController.motion` does stream live rotation-rate
+data in practice, resolving what was originally an unverified assumption. Real-hardware testing
+did surface one real fix: tilt felt backwards, so `ControlMapping.fineAdjustTiltInverted`
+(Remap → Pan/Tilt → Gyro Fine-Adjust) was added as a dedicated toggle, deliberately separate
+from the stick's own `tiltInverted` since gyro and stick are unrelated input paths — flipping
+one doesn't touch the other. Which raw `GCRotationRate` axis maps to pan (as opposed to tilt)
+is still an unconfirmed guess (`GyroAxisMapping` in `GamepadInput.swift`) — see "Known unknowns."
 
 **Tuned control feel** — D-pad fine pan/tilt now uses a smaller, user-tunable
 `ControlMapping.dpadFineSpeed` (default 0.18) instead of a hardcoded 0.4; the speed modifier's
@@ -51,7 +57,12 @@ slow↔full-speed transition now eases via `ControlMapping.modifierEaseRate` (`P
 instead of snapping instantly. `ControlMapping` gained a hand-written `Decodable` init
 (`decodeIfPresent(...) ?? default` per field) specifically so adding these new fields can never
 wipe a previously-saved mapping — the compiler-synthesized version would throw on any unknown
-key and silently reset to defaults.
+key and silently reset to defaults. `ControlMapping.stickDeadzone` (Remap → Pan/Tilt → Sticks)
+zeroes a raw stick axis at or below threshold before sensitivity/D-pad/modifier/brake/momentum
+ever see it — added after real-world testing with an older controller whose sticks don't
+return exactly to center; the previous fixed 0.05 threshold only gated momentum's internal
+decay-vs-accelerate decision and did nothing at all when momentum was disabled, so drift could
+still leak straight through as slow, unwanted pan/tilt/zoom creep.
 
 **Multi-camera support + multiview** (`Camera.swift`, `CameraSession.swift`,
 `CameraSessionStore.swift`) — a `Camera` list (name/ip/port/color) replaces the milestone-1
@@ -78,6 +89,9 @@ gamepad-active (mirrors the Electron app's background-tracking capability with n
 plumbing, since `PersonTrackerSession` sends through its own session's client reactively rather
 than through the gamepad's per-tick loop). UI: a "Track" toggle + shot-preset picker in the
 header, and `TrackingOverlayView.swift` draws detection boxes over the feed with tap-to-lock.
+Tracking can also be toggled straight from the controller — `toggleTracking` is a
+`ButtonActionId` bound to Square by default (rebindable in Remap → Buttons), so it doesn't have
+to be reached for on-screen mid-shot.
 
 **UI** (`ContentView.swift`, `SettingsView.swift`, `CameraGridView.swift`,
 `HotShotBotSwiftApp.swift`) — a Single/Grid toggle switches between the milestone-1-style single
@@ -153,14 +167,20 @@ a few seconds with no controller/camera attached, then killing it — confirmed 
 `GCController` observers, and empty-state UI all initialize without a physical DualSense or
 camera present).
 
-**Milestone 2's additions were verified by `swift build` + the unit test suite only** —
-deliberately no `swift run`/launch this time, regardless of environment capability: the app
-controls real broadcast camera hardware, and this pass happened while a live show was in
-progress elsewhere on this hardware, so launching or restarting the app (Electron or Swift) was
-explicitly out of scope for the session. A first real launch after pulling these changes should
-re-confirm the milestone-1 smoke test above still holds, then work through "Testing against real
-hardware" below — none of the new gyro/tracking/multi-camera behavior has been visually or
-functionally exercised yet.
+**Milestone 2's initial implementation was verified by `swift build` + the unit test suite
+only** — deliberately no `swift run`/launch during that pass, regardless of environment
+capability: a live show was in progress elsewhere on this same hardware at the time, so
+launching or restarting the app was explicitly out of scope for that session.
+
+**Milestone 2 has since been built in release configuration (`swift build -c release`),
+packaged into a `.app` bundle (`./build-app.sh release`), installed to `/Applications`, and
+run on a real DualSense against a real camera** — the core gamepad control pipeline and gyro
+fine-adjust are both confirmed working ("the controls feel really solid"). That real-hardware
+pass is what surfaced two of this update's fixes: gyro tilt direction needed a dedicated invert
+toggle, and an older controller's stick drift needed a real, adjustable deadzone rather than the
+previous fixed, momentum-only one. AI tracking and multi-camera/multiview specifically haven't
+had explicit hands-on confirmation yet — see "Testing against real hardware" below for what to
+check.
 
 ## Running tests
 
@@ -217,48 +237,48 @@ should expose it automatically (no pairing step specific to this app). The "Cont
 dot turns green once `GCControllerDidConnect` fires and the extended gamepad profile is
 available. Push the left stick to drive pan/tilt, the right stick vertically to zoom; the debug
 panel at the bottom of the window shows the raw stick values, the last CGI command sent, and
-the camera's raw text response. Hold L1+R1 together and twist the controller to test gyro
-fine-adjust — if pan/tilt moves the wrong direction or axis, that's the unverified
-`GyroAxisMapping` guess (see below), fixable as a one-line change there.
+the camera's raw text response. If an older controller's sticks don't rest exactly at center,
+raise "Dead zone" in Remap → Pan/Tilt → Sticks until the drift stops registering. Hold L1+R1
+together and twist the controller to test gyro fine-adjust (confirmed working on real
+hardware) — if tilt feels backwards, flip "Invert tilt" in Remap → Pan/Tilt → Gyro Fine-Adjust;
+if PAN feels backwards or swapped with tilt, that's the still-unverified `GyroAxisMapping` guess
+(see below), which needs an actual code change (a one-line flip/swap in `GamepadInput.swift`),
+not just a toggle.
 
-**AI tracking.** Click "Track" in the header (disabled while yielded). With a person in frame,
-tap their detection box (yellow) to lock on (turns green) — the camera should start steering to
-keep them framed per the Free/Mid/Full shot preset. Tap elsewhere on the feed to unlock.
+**AI tracking.** Click "Track" in the header, or press whichever button is bound to
+`toggleTracking` (Square by default) — both toggle the same state (disabled while yielded). With
+a person in frame, tap their detection box (yellow) to lock on (turns green) — the camera should
+start steering to keep them framed per the Free/Mid/Full shot preset. Tap elsewhere on the feed
+to unlock.
 
 ## Known unknowns (not verifiable without real hardware)
 
-- **GameController + DualSense on macOS in practice.** The code reads `leftThumbstick`,
-  `rightThumbstick`, `leftTrigger`/`rightTrigger`, `buttonA/B/X/Y`, `dpad`, `buttonOptions`,
-  `leftThumbstickButton`/`rightThumbstickButton` off `GCExtendedGamepad`, plus
-  `touchpadButton` via a cast to `GCDualSenseGamepad` (Apple's DualSense-specific subclass, has
-  existed since macOS 11.3) — all per Apple's public headers, and Apple documents DualSense as
-  a first-class supported controller. But whether Bluetooth vs. USB connection matters for
-  which profile gets exposed, whether the axis polarity assumptions match a real unit (SDL/other
-  frameworks have occasionally disagreed with Apple's about Y-axis sign — worth double-checking
-  that "stick up" really produces a positive `yAxis.value` and not a value that needs negating
-  on top of what `PTZCommands` already does), and the exact behavior of `waitingForPress` /
-  `GCControllerDidConnect` timing over Bluetooth are all unverified.
+- **GameController + DualSense on macOS in practice — mostly confirmed.** Real-hardware testing
+  ("the controls feel really solid") confirms `leftThumbstick`/`rightThumbstick` axis polarity
+  and the button reads are correct as ported — no stick-direction or button-mapping complaints,
+  only the separate gyro tilt-direction issue described below. Still unconfirmed: whether
+  Bluetooth vs. USB connection matters for which profile gets exposed, and the exact behavior of
+  `waitingForPress`/`GCControllerDidConnect` timing over Bluetooth specifically (testing so far
+  hasn't distinguished the two transports).
 - **MJPEG parsing against a real Panasonic stream.** The SOI/EOI byte-scanning approach is
   standard for MJPEG-over-HTTP and should be robust to boundary-string variation across camera
   firmware, but it's untested against an actual AW-UE70/UE160/HE130's stream — there could be
   firmware quirks (chunked transfer encoding edge cases, a boundary marker that happens to
   contain byte sequences matching `0xFFD8`/`0xFFD9`, unusually large frames near the 8MB buffer
   cap) that only show up against the real device.
-- **No AppKit-level verification that a window actually renders.** The build+launch smoke test
-  confirms the process starts and exits cleanly without crashing, but there was no way in this
-  environment to visually confirm the SwiftUI window actually paints the feed/controls as
-  intended — worth a first-run visual check.
-- **Gyro (`GCMotion`) on a real DualSense.** `GCController.motion: GCMotion?` and
-  `GCMotion.rotationRate`/`sensorsActive` are confirmed real, documented API surface (checked
-  against the actual GameController.framework headers on this machine, not assumed) — but
-  whether a physical DualSense (USB or Bluetooth) actually returns a non-nil `.motion` with live
-  non-zero `rotationRate` once `sensorsActive = true` is unverified. If `.motion` turns out to be
-  nil in practice, gyro fine-adjust degrades safely to "does nothing" rather than crashing.
-- **Which `GCRotationRate` axis is pan vs. tilt, and sign, on a real unit.** Not documented
-  anywhere in Apple's headers (they specify only the right-hand-rule sign per abstract axis, not
-  the controller's physical orientation) — `GyroAxisMapping` in `GamepadInput.swift` is a
-  best guess and will likely need a swap/flip after a first real test; it's isolated there
-  specifically so that's a one-line fix.
+- **~~No AppKit-level verification that a window actually renders.~~ Resolved.** The window
+  does render and the controls are usable — confirmed by real-hardware testing (see "Building").
+  `CameraGridView`'s multiview layout and `TrackingOverlayView`'s tap-to-lock hit-testing
+  specifically haven't been part of that confirmation yet, though — see below.
+- **Gyro (`GCMotion`) on a real DualSense — confirmed working.** `GCController.motion` does
+  return non-nil with live `rotationRate` data on real hardware once `sensorsActive = true`,
+  resolving what was originally an unverified assumption. Tilt direction did need flipping in
+  practice, now handled by the `fineAdjustTiltInverted` toggle rather than a code change.
+- **Whether the PAN axis specifically is correctly mapped/signed is still unconfirmed.** Only
+  tilt was reported as backwards and only tilt has a toggle so far — `GyroAxisMapping.pan(_:)`
+  in `GamepadInput.swift` hasn't had explicit confirmation either way. If pan also turns out
+  backwards or swapped with tilt, that needs an actual code change there (or a second toggle
+  added the same way `fineAdjustTiltInverted` was), not something fixable from the UI today.
 - **Vision detection quality/latency against real camera frames.** Compression artifacts,
   motion blur, and actual per-frame inference time on the target Mac (needs to stay comfortably
   under the 150ms sample interval, especially with multiple cameras tracking at once) are
@@ -271,4 +291,5 @@ keep them framed per the Free/Mid/Full shot preset. Tap elsewhere on the feed to
   `fineAdjustSensitivity = 0.15`/`fineAdjustMaxOutput = 0.35`) are reasoned from the existing
   momentum/modifier math, not hardware-validated — expect a tuning pass once testable.
 - **SwiftUI grid/tile rendering and the tap-to-lock overlay's hit-testing math** have never been
-  visually verified, same category as the existing "no AppKit-level verification" item above.
+  visually verified — the general "does a window render" question above is resolved, but these
+  two specific views weren't part of that pass.
