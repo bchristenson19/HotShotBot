@@ -26,6 +26,12 @@ final class PTZControlLoop: ObservableObject {
 
     private var cancellable: AnyCancellable?
 
+    private let lightBar = DualSenseLightBar()
+    /// Last color actually written to the light bar — diffed against each tick's desired color
+    /// so `updateLightBar()` (called every ~16ms poll tick, same as everything else in `handle`)
+    /// only touches the HID device when something actually changed, not 60 times a second.
+    private var lastLightBarColor: (r: UInt8, g: UInt8, b: UInt8)?
+
     /// Threshold for momentum's own "is the target far enough from zero to bother lerping
     /// toward it, vs. decaying toward 0" decision — a small fixed numerical-stability constant,
     /// NOT the user-facing drift/deadzone setting (`ControlMapping.stickDeadzone`, applied to the
@@ -73,7 +79,34 @@ final class PTZControlLoop: ObservableObject {
         }
     }
 
+    /// Keeps the DualSense light bar showing which camera is currently gamepad-active — solid
+    /// yellow while that camera is yielded to an RP-200 (see `defaultCameraColor`'s doc comment
+    /// for why no camera's own color may ever be yellow), otherwise the active camera's own
+    /// `colorHex`. Runs unconditionally at the top of every `handle` tick, including while
+    /// disconnected/no active camera (falls through to "nothing to show" below), rather than
+    /// only on a Combine subscription to `sessionStore`/`CameraClient` — `CameraSession`'s own
+    /// doc comment notes nested `ObservableObject`s don't forward change notifications upward,
+    /// so re-reading the true current state every tick (same as the rest of this loop already
+    /// does) sidesteps that instead of fighting it.
+    private func updateLightBar() {
+        let target: (r: UInt8, g: UInt8, b: UInt8)
+        if let session = sessionStore.activeSession {
+            if session.client.isYielded {
+                target = (255, 255, 0)
+            } else {
+                target = hexToRGB255(session.camera.colorHex) ?? (0, 0, 0)
+            }
+        } else {
+            target = (0, 0, 0)
+        }
+        if let last = lastLightBarColor, last == target { return }
+        lastLightBarColor = target
+        lightBar.setColor(r: target.r, g: target.g, b: target.b)
+    }
+
     private func handle(_ state: GamepadState) {
+        updateLightBar()
+
         let now = Date()
         // Cap dt at 100ms, matching app/page.tsx — guards against a huge decay jump after e.g.
         // the app being backgrounded, which would otherwise let velocity decay to zero in one step.
@@ -121,6 +154,8 @@ final class PTZControlLoop: ObservableObject {
                 sessionStore.cycleActive()
             case .toggleTracking:
                 session.tracker.isEnabled.toggle()
+            case .toggleGridView:
+                sessionStore.isGridMode.toggle()
             }
         }
 

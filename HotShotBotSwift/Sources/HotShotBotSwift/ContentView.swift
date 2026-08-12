@@ -10,13 +10,12 @@ struct ContentView: View {
 
     @State private var showSettings = false
     @State private var showRemap = false
-    @State private var isGridMode = false
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            if isGridMode {
+            if sessionStore.isGridMode {
                 CameraGridView(sessionStore: sessionStore)
             } else if let session = sessionStore.activeSession {
                 // .id(session.id) forces SwiftUI to treat this as a fresh view when the active
@@ -73,7 +72,7 @@ struct ContentView: View {
             Spacer()
 
             if sessionStore.sessions.count > 1 {
-                Picker("", selection: $isGridMode) {
+                Picker("", selection: $sessionStore.isGridMode) {
                     Text("Single").tag(false)
                     Text("Grid").tag(true)
                 }

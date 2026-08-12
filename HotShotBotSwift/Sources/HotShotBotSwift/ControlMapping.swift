@@ -49,6 +49,7 @@ enum ButtonActionId: String, Codable, CaseIterable, Hashable {
     case finePanTilt
     case cycleCamera
     case toggleTracking
+    case toggleGridView
 
     var label: String {
         switch self {
@@ -59,6 +60,7 @@ enum ButtonActionId: String, Codable, CaseIterable, Hashable {
         case .finePanTilt: return "Fine Pan/Tilt"
         case .cycleCamera: return "Cycle Camera"
         case .toggleTracking: return "Toggle AI Tracking"
+        case .toggleGridView: return "Toggle Grid View"
         }
     }
 }
@@ -90,13 +92,14 @@ enum TriggerId: String, Codable, CaseIterable {
 /// this app has no preset-save feature yet for `saveModifier` to gate anyway).
 struct ControlMapping: Codable, Equatable {
     /// Matches the user's real Electron button layout (screenshotted 2026-08-10), translated
-    /// for the two deltas above, plus `.square: .toggleTracking` (a new default binding — square
-    /// was unbound in the Electron layout and has no milestone-1 equivalent to preserve).
-    /// cross/circle/l1/r1 are intentionally absent (unbound) — a missing key reads as `.none`
-    /// via `buttons[button] ?? .none` wherever this is consulted.
+    /// for the two deltas above, plus `.square: .toggleTracking` and `.circle: .toggleGridView`
+    /// (new default bindings — both were unbound in the Electron layout and have no milestone-1
+    /// equivalent to preserve). cross/l1/r1 are intentionally absent (unbound) — a missing key
+    /// reads as `.none` via `buttons[button] ?? .none` wherever this is consulted.
     var buttons: [ButtonId: ButtonActionId] = [
         .triangle: .toggleYield,
         .square: .toggleTracking,
+        .circle: .toggleGridView,
         .l3: .oneTouchFocus,
         .r3: .toggleAutoFocus,
         .dpadUp: .finePanTilt,

@@ -159,7 +159,14 @@ final class GamepadInput: ObservableObject {
             dpadDown: pad.dpad.down.isPressed,
             dpadLeft: pad.dpad.left.isPressed,
             dpadRight: pad.dpad.right.isPressed,
-            options: pad.buttonOptions?.isPressed ?? false,
+            // GameController's naming is Xbox-derived, not PlayStation-derived: `buttonMenu` (the
+            // "pause/start" role, top-right on an Xbox pad) is what a DualSense's physical
+            // "Options" button (also top-right) reports through, while `buttonOptions` (the
+            // "view/back" role) corresponds to the DualSense's separate "Create" button on the
+            // left. Reading `buttonOptions` here for the Options button was the likely cause of
+            // "cycle camera does nothing" — that binding's press edge never fired because this
+            // was watching the wrong physical button.
+            options: pad.buttonMenu.isPressed,
             touchpad: (controller.extendedGamepad as? GCDualSenseGamepad)?.touchpadButton.isPressed ?? false,
             rotationRateX: rrX,
             rotationRateY: rrY,

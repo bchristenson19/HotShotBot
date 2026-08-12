@@ -15,7 +15,17 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Cameras").font(.title2).bold()
+            HStack {
+                Text("Cameras").font(.title2).bold()
+                Spacer()
+                Button {
+                    resetForm()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .help("Add another camera")
+            }
 
             List(sessionStore.sessions) { session in
                 HStack {

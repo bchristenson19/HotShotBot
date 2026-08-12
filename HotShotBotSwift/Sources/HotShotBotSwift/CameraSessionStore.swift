@@ -11,6 +11,11 @@ final class CameraSessionStore: ObservableObject {
     @Published private(set) var sessions: [CameraSession] = []
     @Published private(set) var activeCameraID: Camera.ID?
 
+    /// Single/Grid view mode — lives here rather than as `ContentView`'s own local `@State` so
+    /// `PTZControlLoop` can flip it directly from a remappable button press (`.toggleGridView`),
+    /// the same way it already reads/writes everything else camera-related through this store.
+    @Published var isGridMode = false
+
     var activeSession: CameraSession? {
         sessions.first { $0.id == activeCameraID } ?? sessions.first
     }
@@ -43,9 +48,17 @@ final class CameraSessionStore: ObservableObject {
         persist()
     }
 
+    /// Switches which camera is gamepad-active — and, since only one camera can be driven at a
+    /// time, keeps yield state in lockstep: the incoming camera is un-yielded (it's the one about
+    /// to be driven) and the outgoing one is yielded (most visible in multiview, where the other
+    /// tiles keep streaming but aren't being steered — they should read as handed off, not as
+    /// silently-still-under-HotShotBot-control). Mirrors the light bar's own active-camera-only
+    /// signal — see `PTZControlLoop.updateLightBar`.
     func setActive(id: Camera.ID) {
         guard id != activeCameraID else { return }
         stopOutgoingCamera()
+        activeSession?.client.setYielded(true)
+        sessions.first { $0.id == id }?.client.setYielded(false)
         activeCameraID = id
     }
 

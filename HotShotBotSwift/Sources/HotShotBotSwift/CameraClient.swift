@@ -24,10 +24,21 @@ final class CameraClient: ObservableObject {
     /// `isYielded` in app/page.tsx, but collapsed into `CameraClient` itself (the single choke
     /// point all commands already flow through here) rather than kept in a separate top-level
     /// ref the TS version needs because its state lives one level up, in the page component.
-    @Published private(set) var isYielded = false
+    ///
+    /// Defaults to `true` (a deliberate deviation from app/page.tsx's default-unyielded state):
+    /// on a fresh launch, no camera should move until the operator explicitly takes control,
+    /// rather than a stray gamepad touch immediately driving whatever camera happens to be
+    /// active. `CameraSessionStore.setActive` un-yields whichever camera becomes active and
+    /// yields whichever stops being active, so this default only really matters for however long
+    /// it takes the operator to press the yield button (Triangle by default) or switch cameras.
+    @Published private(set) var isYielded = true
 
     func toggleYield() {
-        isYielded.toggle()
+        setYielded(!isYielded)
+    }
+
+    func setYielded(_ yielded: Bool) {
+        isYielded = yielded
     }
 
     /// Minimum spacing between sent PTZ commands on a given channel, matching `CMD_INTERVAL_MS`

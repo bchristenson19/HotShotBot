@@ -47,6 +47,28 @@ struct CameraTests {
         #expect(decoded == original)
     }
 
+    // MARK: - hexToRGB255
+
+    @Test func hexToRGB255ParsesWithLeadingHash() {
+        let rgb = hexToRGB255("#1d4ed8")
+        #expect(rgb?.r == 0x1d)
+        #expect(rgb?.g == 0x4e)
+        #expect(rgb?.b == 0xd8)
+    }
+
+    @Test func hexToRGB255ParsesWithoutLeadingHash() {
+        let rgb = hexToRGB255("dc2626")
+        #expect(rgb?.r == 0xdc)
+        #expect(rgb?.g == 0x26)
+        #expect(rgb?.b == 0x26)
+    }
+
+    @Test func hexToRGB255RejectsMalformedInput() {
+        #expect(hexToRGB255("") == nil)
+        #expect(hexToRGB255("#zzzzzz") == nil)
+        #expect(hexToRGB255("#abc") == nil)
+    }
+
     // MARK: - LegacyCameraSettings: migration decode
 
     @Test func legacyCameraSettingsDecodesRealMilestone1Shape() {
