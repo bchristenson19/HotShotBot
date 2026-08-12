@@ -158,6 +158,9 @@ struct RemapView: View {
                     }
                     percentSlider("Sensitivity", value: $draft.fineAdjustSensitivity, range: 0.02...0.50)
                     percentSlider("Max output", value: $draft.fineAdjustMaxOutput, range: 0.05...1.0)
+                    Toggle("Invert tilt", isOn: $draft.fineAdjustTiltInverted)
+                    Text("Separate from the stick's tilt invert above — the gyro is its own input path.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
 

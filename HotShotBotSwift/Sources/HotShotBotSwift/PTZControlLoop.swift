@@ -175,7 +175,10 @@ final class PTZControlLoop: ObservableObject {
         if fineAdjustActive {
             let rawPan = GyroAxisMapping.pan(state) * GyroAxisMapping.panSign * m.fineAdjustSensitivity
             var rawTilt = GyroAxisMapping.tilt(state) * GyroAxisMapping.tiltSign * m.fineAdjustSensitivity
-            if m.tiltInverted { rawTilt = -rawTilt }
+            // Deliberately `fineAdjustTiltInverted`, NOT the stick's `tiltInverted` — confirmed
+            // on real hardware that the gyro's tilt direction can feel backwards independently
+            // of the stick's, since they're unrelated input paths.
+            if m.fineAdjustTiltInverted { rawTilt = -rawTilt }
             session.panVelocity = PTZMath.clamped(rawPan, to: m.fineAdjustMaxOutput)
             session.tiltVelocity = PTZMath.clamped(rawTilt, to: m.fineAdjustMaxOutput)
         } else {

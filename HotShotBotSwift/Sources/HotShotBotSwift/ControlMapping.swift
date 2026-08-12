@@ -151,6 +151,11 @@ struct ControlMapping: Codable, Equatable {
     var fineAdjustButtonB: ButtonId = .r1
     var fineAdjustSensitivity: Double = 0.15   // rotationRate (rad/s) -> pan/tilt target scale
     var fineAdjustMaxOutput: Double = 0.35     // hard ceiling regardless of how fast the twist is
+    // Separate from `tiltInverted` above on purpose — confirmed on real hardware that the gyro's
+    // tilt direction can feel backwards independently of the stick's, since they're unrelated
+    // input paths (GyroAxisMapping.tiltSign, a hardcoded best guess, turned out to need a flip in
+    // practice) — a dedicated toggle here means fixing/preferring one doesn't touch the other.
+    var fineAdjustTiltInverted: Bool = false
 
     // Zoom
     var zoomInverted: Bool = true             // Electron: on (push up = zoom in/tele)
@@ -171,7 +176,7 @@ struct ControlMapping: Codable, Equatable {
         case dpadFineSpeed
         case speedModifierButton, speedModifierValue, speedModifierAffectsZoom, modifierEaseRate
         case brakeTrigger, brakeMinSpeed
-        case fineAdjustEnabled, fineAdjustButtonA, fineAdjustButtonB, fineAdjustSensitivity, fineAdjustMaxOutput
+        case fineAdjustEnabled, fineAdjustButtonA, fineAdjustButtonB, fineAdjustSensitivity, fineAdjustMaxOutput, fineAdjustTiltInverted
         case zoomInverted, zoomSensitivity, zoomMomentumEnabled, zoomMomentumGlideMs
     }
 
@@ -206,6 +211,7 @@ struct ControlMapping: Codable, Equatable {
         fineAdjustButtonB = try c.decodeIfPresent(ButtonId.self, forKey: .fineAdjustButtonB) ?? d.fineAdjustButtonB
         fineAdjustSensitivity = try c.decodeIfPresent(Double.self, forKey: .fineAdjustSensitivity) ?? d.fineAdjustSensitivity
         fineAdjustMaxOutput = try c.decodeIfPresent(Double.self, forKey: .fineAdjustMaxOutput) ?? d.fineAdjustMaxOutput
+        fineAdjustTiltInverted = try c.decodeIfPresent(Bool.self, forKey: .fineAdjustTiltInverted) ?? d.fineAdjustTiltInverted
         zoomInverted = try c.decodeIfPresent(Bool.self, forKey: .zoomInverted) ?? d.zoomInverted
         zoomSensitivity = try c.decodeIfPresent(Double.self, forKey: .zoomSensitivity) ?? d.zoomSensitivity
         zoomMomentumEnabled = try c.decodeIfPresent(Bool.self, forKey: .zoomMomentumEnabled) ?? d.zoomMomentumEnabled
