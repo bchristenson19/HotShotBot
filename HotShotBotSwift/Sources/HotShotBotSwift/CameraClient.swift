@@ -9,8 +9,9 @@ import Foundation
 @MainActor
 final class CameraClient: ObservableObject {
 
-    /// IP (and optional port) of the camera being controlled. Empty IP means "not configured".
-    @Published var settings: CameraSettings
+    /// The camera being controlled. Empty `ip` means "not configured". One `CameraClient` per
+    /// `CameraSession` — see that file.
+    @Published var camera: Camera
 
     /// Most recent command string sent, and the camera's raw text response — mirrors the
     /// "CMD / RES" debug panel in `app/page.tsx`.
@@ -38,8 +39,8 @@ final class CameraClient: ObservableObject {
     private var inFlight: Set<String> = []
     private let session: URLSession
 
-    init(settings: CameraSettings) {
-        self.settings = settings
+    init(camera: Camera) {
+        self.camera = camera
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 2
         session = URLSession(configuration: config)
@@ -65,12 +66,12 @@ final class CameraClient: ObservableObject {
         // the first thing checked (after confirming a camera is selected at all), so yielding
         // suppresses every outgoing command unconditionally, not just pan/tilt.
         guard !isYielded else { return }
-        guard !settings.ip.isEmpty else { return }
+        guard !camera.ip.isEmpty else { return }
         guard !inFlight.contains(channel) else { return }
         inFlight.insert(channel)
         lastCommand = cmd
 
-        let urlString = "http://\(settings.ip):\(settings.port)/cgi-bin/\(endpoint)"
+        let urlString = "http://\(camera.ip):\(camera.port)/cgi-bin/\(endpoint)"
             + "?cmd=\(cmd.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cmd)&res=1"
         guard let url = URL(string: urlString) else {
             inFlight.remove(channel)
@@ -101,35 +102,5 @@ final class CameraClient: ObservableObject {
     /// sticks return to center, so the camera doesn't keep drifting.
     func stopPanTilt() {
         send(PTZCommands.stopCmd, channel: "pt")
-    }
-}
-
-/// Persisted camera connection settings (IP + port). Loaded from / saved to UserDefaults.
-/// The TS version keeps a full multi-camera list in localStorage (`lib/mapping.ts`-adjacent
-/// `ptz-cameras` key) — this milestone only needs one camera, so this is intentionally the
-/// minimal single-camera subset of that shape.
-struct CameraSettings: Codable, Equatable {
-    var ip: String = ""
-    var port: Int = 80
-
-    private static let defaultsKey = "com.hotshotbot.cameraSettings"
-
-    static func load() -> CameraSettings {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
-              let decoded = try? JSONDecoder().decode(CameraSettings.self, from: data)
-        else { return CameraSettings() }
-        return decoded
-    }
-
-    func save() {
-        guard let data = try? JSONEncoder().encode(self) else { return }
-        UserDefaults.standard.set(data, forKey: Self.defaultsKey)
-    }
-
-    /// Default MJPEG stream URL for this camera, matching `STREAM_PATHS["aw-ue70"]` in
-    /// lib/ptz.ts (shared default across AW-UE70/UE160/HE130 in the TS version).
-    var streamURL: URL? {
-        guard !ip.isEmpty else { return nil }
-        return URL(string: "http://\(ip):\(port)/cgi-bin/mjpeg?resolution=1920x1080&quality=4&framerate=30")
     }
 }

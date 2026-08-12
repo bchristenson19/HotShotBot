@@ -113,6 +113,11 @@ struct RemapView: View {
                 Text("Left stick takes over the right stick's job and vice versa.").font(.caption).foregroundStyle(.secondary)
             }
 
+            groupBox("D-Pad Fine Pan/Tilt") {
+                percentSlider("Step size", value: $draft.dpadFineSpeed, range: 0.05...0.50)
+                Text("Speed while a D-pad direction bound to Fine Pan/Tilt is held.").font(.caption).foregroundStyle(.secondary)
+            }
+
             groupBox("Sensitivity") {
                 percentSlider("Sensitivity", value: $draft.ptSensitivity, range: 0.10...1.0)
                 Toggle("Invert tilt", isOn: $draft.tiltInverted)
@@ -129,6 +134,31 @@ struct RemapView: View {
             groupBox("Speed Modifier") {
                 percentSlider("Slow multiplier", value: $draft.speedModifierValue, range: 0.05...0.90)
                 Toggle("Also affects zoom", isOn: $draft.speedModifierAffectsZoom)
+                percentSlider("Transition ease", value: $draft.modifierEaseRate, range: 0.05...1.0)
+                Text("Lower = smoother ramp between slow and full speed; 100% = instant.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            groupBox("Gyro Fine-Adjust") {
+                Toggle("Enabled", isOn: $draft.fineAdjustEnabled)
+                Text("Hold both buttons together to steer pan/tilt from the controller's gyro instead of the stick, for very fine framing nudges.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if draft.fineAdjustEnabled {
+                    HStack {
+                        Text("Buttons").frame(width: 90, alignment: .leading)
+                        Picker("", selection: $draft.fineAdjustButtonA) {
+                            ForEach(ButtonId.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
+                        .labelsHidden()
+                        Text("+")
+                        Picker("", selection: $draft.fineAdjustButtonB) {
+                            ForEach(ButtonId.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
+                        .labelsHidden()
+                    }
+                    percentSlider("Sensitivity", value: $draft.fineAdjustSensitivity, range: 0.02...0.50)
+                    percentSlider("Max output", value: $draft.fineAdjustMaxOutput, range: 0.05...1.0)
+                }
             }
 
             groupBox("Brake") {

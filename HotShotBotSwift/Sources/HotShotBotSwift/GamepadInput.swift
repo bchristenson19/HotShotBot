@@ -33,7 +33,28 @@ struct GamepadState: Equatable {
     var options = false
     var touchpad = false
 
+    /// DualSense gyro rotation rate (rad/s per axis), for the gyro fine-adjust feature — read
+    /// from `GCController.motion`, a separate nullable property from `extendedGamepad` (see
+    /// `GamepadInput.pollOnce()`). Zero when no controller motion is available (older controller,
+    /// or `.motion` is nil) rather than optional, so callers don't need to unwrap — a controller
+    /// that can't report gyro data is indistinguishable from one that's perfectly still.
+    var rotationRateX: Double = 0
+    var rotationRateY: Double = 0
+    var rotationRateZ: Double = 0
+
     var connected = false
+}
+
+/// Best-guess mapping from the DualSense's gyro rotation rate to the gyro fine-adjust feature's
+/// pan/tilt targets — UNVERIFIED on real hardware (see the project README's Known Unknowns).
+/// `GCRotationRate`'s header only documents a right-hand-rule sign per abstract axis, not which
+/// physical twist on a DualSense's housing corresponds to which axis, so this mapping is
+/// isolated here for a quick one-line fix once it's actually been tested against a controller.
+enum GyroAxisMapping {
+    static func pan(_ state: GamepadState) -> Double { state.rotationRateY }
+    static func tilt(_ state: GamepadState) -> Double { state.rotationRateX }
+    static let panSign: Double = 1
+    static let tiltSign: Double = 1
 }
 
 /// Polls a connected `GCController`'s extended gamepad profile every frame and publishes a
@@ -100,6 +121,21 @@ final class GamepadInput: ObservableObject {
             return
         }
         waitingForPress = false
+
+        // Gyro rotation rate, for the gyro fine-adjust feature. `GCMotion` is a separate,
+        // nullable sibling property to `extendedGamepad` — not nested under it. Per
+        // GameController.framework's headers, `sensorsActive` must be explicitly set `true` to
+        // start receiving data when `sensorsRequireManualActivation` is true, so that's done here
+        // once motion becomes available rather than assuming it streams by default. Whether a
+        // physical DualSense actually reports non-nil `.motion` with live values is unverified —
+        // this degrades safely to all-zero below if `.motion` is nil.
+        var rrX = 0.0, rrY = 0.0, rrZ = 0.0
+        if let motion = controller.motion {
+            if !motion.sensorsActive { motion.sensorsActive = true }
+            let r = motion.rotationRate
+            rrX = r.x; rrY = r.y; rrZ = r.z
+        }
+
         state = GamepadState(
             leftX: Double(pad.leftThumbstick.xAxis.value),
             // Negated: GameController reports +1 for "stick pushed up" on the Y axes, while the
@@ -125,6 +161,9 @@ final class GamepadInput: ObservableObject {
             dpadRight: pad.dpad.right.isPressed,
             options: pad.buttonOptions?.isPressed ?? false,
             touchpad: (controller.extendedGamepad as? GCDualSenseGamepad)?.touchpadButton.isPressed ?? false,
+            rotationRateX: rrX,
+            rotationRateY: rrY,
+            rotationRateZ: rrZ,
             connected: true
         )
     }

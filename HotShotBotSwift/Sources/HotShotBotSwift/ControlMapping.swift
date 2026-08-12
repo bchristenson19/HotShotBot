@@ -112,6 +112,11 @@ struct ControlMapping: Codable, Equatable {
     var momentumGlideMs: Double = 400         // Electron: 400ms
     var momentumAccel: Double = 0.24          // Electron: 24%
 
+    // D-pad "fine pan/tilt" step size (see the override in PTZControlLoop.handle(_:)) — was a
+    // bare 0.4 literal with no easing; 0.4 read as too coarse for fine framing nudges, so this is
+    // now a named, user-tunable field instead.
+    var dpadFineSpeed: Double = 0.18
+
     // Speed modifier — hold `speedModifierButton` to scale PT (and optionally zoom) by
     // `speedModifierValue`. Electron has this on L1 in "slow" mode at 55%; ported to L2 here
     // per explicit request (Electron's ButtonId can't target L2 — a trigger — at all, so this
@@ -120,6 +125,13 @@ struct ControlMapping: Codable, Equatable {
     var speedModifierValue: Double = 0.55     // Electron: 55% ("slow" mode)
     var speedModifierAffectsZoom: Bool = true // Electron: on
 
+    // How quickly the EFFECTIVE modifier multiplier itself eases toward speedModifierValue (or
+    // back to 1.0 on release), each tick — same eased(current:target:rate:) shape as
+    // momentumAccel, but a dedicated field rather than reusing it: this smooths the modifier
+    // engage/release transition specifically, without changing how momentum handles an ordinary
+    // stick flick. 1.0 reproduces the old instant-step behavior; see PTZMath.eased.
+    var modifierEaseRate: Double = 0.20
+
     // Brake — trigger that scales pan/tilt AND zoom speed down continuously (not a hold-
     // modifier; proportional to how far the trigger is pressed). Electron: R2, min speed 8% at
     // full press, pan/tilt only — this native app extends the brake to zoom too, per explicit
@@ -127,11 +139,78 @@ struct ControlMapping: Codable, Equatable {
     var brakeTrigger: TriggerId? = .r2
     var brakeMinSpeed: Double = 0.08
 
+    // Gyro "fine adjust" — hold BOTH fineAdjustButtonA and fineAdjustButtonB simultaneously to
+    // drive pan/tilt directly off the DualSense's gyro rotation rate instead of the stick, for
+    // very fine framing nudges (see PTZControlLoop.handle(_:)). Deliberately a pair of dedicated
+    // ButtonId fields, like speedModifierButton/brakeTrigger above, rather than a ButtonActionId
+    // case — a two-button chord for a mode switch doesn't fit the one-button-to-one-action shape
+    // of `buttons`. .l1/.r1 are unbound in the default `buttons` dict above, so this doesn't
+    // collide with anything.
+    var fineAdjustEnabled: Bool = true
+    var fineAdjustButtonA: ButtonId = .l1
+    var fineAdjustButtonB: ButtonId = .r1
+    var fineAdjustSensitivity: Double = 0.15   // rotationRate (rad/s) -> pan/tilt target scale
+    var fineAdjustMaxOutput: Double = 0.35     // hard ceiling regardless of how fast the twist is
+
     // Zoom
     var zoomInverted: Bool = true             // Electron: on (push up = zoom in/tele)
     var zoomSensitivity: Double = 0.80        // Electron: 80%
     var zoomMomentumEnabled: Bool = true      // Electron: on
     var zoomMomentumGlideMs: Double = 400     // Electron: 400ms
+
+    /// Plain `init()` restoring the zero-argument construction (e.g. `ControlMapping()` in
+    /// `load()`'s fallback) that a struct normally gets for free from its compiler-synthesized
+    /// memberwise initializer — declaring `init(from:)` below suppresses that synthesis, so this
+    /// has to be spelled out explicitly. Every property already has a `= default` above, so an
+    /// empty body is sufficient.
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case buttons, oneTouchFocusMode
+        case sticksSwapped, ptSensitivity, tiltInverted, momentumEnabled, momentumGlideMs, momentumAccel
+        case dpadFineSpeed
+        case speedModifierButton, speedModifierValue, speedModifierAffectsZoom, modifierEaseRate
+        case brakeTrigger, brakeMinSpeed
+        case fineAdjustEnabled, fineAdjustButtonA, fineAdjustButtonB, fineAdjustSensitivity, fineAdjustMaxOutput
+        case zoomInverted, zoomSensitivity, zoomMomentumEnabled, zoomMomentumGlideMs
+    }
+
+    /// Hand-written so adding a field never breaks decoding an older saved mapping. The
+    /// compiler-synthesized `Decodable` only falls back to a property's `= default` when the key
+    /// is missing AND the property's type is `Optional` — every field here is non-optional (for
+    /// plain `Double`/`Bool`/enum storage), so a synthesized init would throw on any key this
+    /// version doesn't yet know about, and `load()`'s `try?` would silently discard the user's
+    /// entire saved mapping. `decodeIfPresent(...) ?? default` matches `lib/mapping.ts`'s
+    /// `loadMapping()`, which solves the identical problem field-by-field for the same reason.
+    /// `encode(to:)` is left compiler-synthesized against the `CodingKeys` above.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ControlMapping()
+        buttons = try c.decodeIfPresent([ButtonId: ButtonActionId].self, forKey: .buttons) ?? d.buttons
+        oneTouchFocusMode = try c.decodeIfPresent(OneTouchFocusMode.self, forKey: .oneTouchFocusMode) ?? d.oneTouchFocusMode
+        sticksSwapped = try c.decodeIfPresent(Bool.self, forKey: .sticksSwapped) ?? d.sticksSwapped
+        ptSensitivity = try c.decodeIfPresent(Double.self, forKey: .ptSensitivity) ?? d.ptSensitivity
+        tiltInverted = try c.decodeIfPresent(Bool.self, forKey: .tiltInverted) ?? d.tiltInverted
+        momentumEnabled = try c.decodeIfPresent(Bool.self, forKey: .momentumEnabled) ?? d.momentumEnabled
+        momentumGlideMs = try c.decodeIfPresent(Double.self, forKey: .momentumGlideMs) ?? d.momentumGlideMs
+        momentumAccel = try c.decodeIfPresent(Double.self, forKey: .momentumAccel) ?? d.momentumAccel
+        dpadFineSpeed = try c.decodeIfPresent(Double.self, forKey: .dpadFineSpeed) ?? d.dpadFineSpeed
+        speedModifierButton = try c.decodeIfPresent(TriggerId.self, forKey: .speedModifierButton) ?? d.speedModifierButton
+        speedModifierValue = try c.decodeIfPresent(Double.self, forKey: .speedModifierValue) ?? d.speedModifierValue
+        speedModifierAffectsZoom = try c.decodeIfPresent(Bool.self, forKey: .speedModifierAffectsZoom) ?? d.speedModifierAffectsZoom
+        modifierEaseRate = try c.decodeIfPresent(Double.self, forKey: .modifierEaseRate) ?? d.modifierEaseRate
+        brakeTrigger = try c.decodeIfPresent(TriggerId?.self, forKey: .brakeTrigger) ?? d.brakeTrigger
+        brakeMinSpeed = try c.decodeIfPresent(Double.self, forKey: .brakeMinSpeed) ?? d.brakeMinSpeed
+        fineAdjustEnabled = try c.decodeIfPresent(Bool.self, forKey: .fineAdjustEnabled) ?? d.fineAdjustEnabled
+        fineAdjustButtonA = try c.decodeIfPresent(ButtonId.self, forKey: .fineAdjustButtonA) ?? d.fineAdjustButtonA
+        fineAdjustButtonB = try c.decodeIfPresent(ButtonId.self, forKey: .fineAdjustButtonB) ?? d.fineAdjustButtonB
+        fineAdjustSensitivity = try c.decodeIfPresent(Double.self, forKey: .fineAdjustSensitivity) ?? d.fineAdjustSensitivity
+        fineAdjustMaxOutput = try c.decodeIfPresent(Double.self, forKey: .fineAdjustMaxOutput) ?? d.fineAdjustMaxOutput
+        zoomInverted = try c.decodeIfPresent(Bool.self, forKey: .zoomInverted) ?? d.zoomInverted
+        zoomSensitivity = try c.decodeIfPresent(Double.self, forKey: .zoomSensitivity) ?? d.zoomSensitivity
+        zoomMomentumEnabled = try c.decodeIfPresent(Bool.self, forKey: .zoomMomentumEnabled) ?? d.zoomMomentumEnabled
+        zoomMomentumGlideMs = try c.decodeIfPresent(Double.self, forKey: .zoomMomentumGlideMs) ?? d.zoomMomentumGlideMs
+    }
 
     private static let defaultsKey = "com.hotshotbot.controlMapping"
 
