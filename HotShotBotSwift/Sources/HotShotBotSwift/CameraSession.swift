@@ -12,6 +12,11 @@ final class CameraSession: ObservableObject, Identifiable {
     let decoder: MJPEGStreamDecoder
     let tracker: PersonTrackerSession
 
+    /// Non-nil for a virtual camera (`camera.kind == .virtual`): renders the SceneKit feed and
+    /// pushes frames into `decoder`, and its `VirtualPtzController` is wired into `client` so
+    /// PTZ commands drive the virtual pose instead of the network. `nil` for real cameras.
+    private let virtualRenderer: VirtualCameraRenderer?
+
     /// Per-camera AF state — mirrors `autoFocus`/`oneTouchActive` in app/page.tsx, now scoped
     /// per-camera instead of once globally. Note: with no camera-status poll in either
     /// milestone, this still reflects only what THIS app last commanded for THIS camera, not
@@ -34,13 +39,37 @@ final class CameraSession: ObservableObject, Identifiable {
     init(camera: Camera) {
         self.id = camera.id
         self.camera = camera
-        self.client = CameraClient(camera: camera)
-        self.decoder = MJPEGStreamDecoder()
+        let decoder = MJPEGStreamDecoder()
+        self.decoder = decoder
+
+        if camera.isVirtual {
+            let controller = VirtualPtzController()
+            self.client = CameraClient(camera: camera, virtualController: controller)
+            self.virtualRenderer = VirtualCameraRenderer(controller: controller, decoder: decoder)
+        } else {
+            self.client = CameraClient(camera: camera)
+            self.virtualRenderer = nil
+        }
         self.tracker = PersonTrackerSession(decoder: decoder, client: client)
     }
 
+    /// Starts this camera's feed: the SceneKit render loop for a virtual camera, or the MJPEG
+    /// network stream for a real one (a virtual camera's `streamURL` is `nil`, so it never opens
+    /// a `URLSession`).
     func start() {
-        if let url = camera.streamURL { decoder.start(url: url) }
+        if let virtualRenderer {
+            virtualRenderer.start()
+        } else if let url = camera.streamURL {
+            decoder.start(url: url)
+        }
+    }
+
+    /// Fully tears down this session's feed — stops the virtual render loop (or the MJPEG stream)
+    /// so no timer/connection is left running after the camera is removed. Called by
+    /// `CameraSessionStore.removeCamera` in place of a bare `decoder.stop()`.
+    func teardown() {
+        virtualRenderer?.stop()
+        decoder.stop()
     }
 
     /// Applies edited fields (name/ip/port/color) from Settings — restarts the stream only if

@@ -47,6 +47,37 @@ struct CameraTests {
         #expect(decoded == original)
     }
 
+    // MARK: - CameraKind: default, migration, virtual stream URL
+
+    @Test func cameraDefaultsToPanasonicKind() {
+        #expect(Camera(name: "Camera 1").kind == .panasonic)
+        #expect(Camera(name: "Camera 1").isVirtual == false)
+    }
+
+    @Test func cameraJSONWithoutKindDecodesAsPanasonic() {
+        // Persisted `[Camera]` written before `kind` existed has no `kind` key — it must still
+        // decode (as `.panasonic`), which is why the field is defaulted.
+        let jsonString = "{\"id\":\"00000000-0000-0000-0000-000000000000\",\"name\":\"Old Cam\",\"ip\":\"10.0.0.9\",\"port\":80,\"colorHex\":\"#1d4ed8\"}"
+        let decoded = try! JSONDecoder().decode(Camera.self, from: Data(jsonString.utf8))
+        #expect(decoded.kind == CameraKind.panasonic)
+        #expect(decoded.name == "Old Cam")
+    }
+
+    @Test func virtualCameraHasNoStreamURLEvenWithIP() {
+        // A virtual camera never streams over the network, so streamURL is nil regardless of any
+        // stale ip/port left on the struct.
+        let camera = Camera(name: "Virtual", ip: "192.168.1.50", port: 80, kind: .virtual)
+        #expect(camera.isVirtual)
+        #expect(camera.streamURL == nil)
+    }
+
+    @Test func cameraKindRoundTripsThroughCodable() {
+        let original = Camera(name: "Virtual", colorHex: "#123456", kind: .virtual)
+        let decoded = try! JSONDecoder().decode(Camera.self, from: JSONEncoder().encode(original))
+        #expect(decoded == original)
+        #expect(decoded.kind == .virtual)
+    }
+
     // MARK: - hexToRGB255
 
     @Test func hexToRGB255ParsesWithLeadingHash() {

@@ -37,7 +37,7 @@ final class CameraSessionStore: ObservableObject {
     func removeCamera(id: Camera.ID) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
         if activeCameraID == id { stopOutgoingCamera() }
-        sessions[index].decoder.stop()
+        sessions[index].teardown()
         sessions.remove(at: index)
         if activeCameraID == id { activeCameraID = sessions.first?.id }
         persist()

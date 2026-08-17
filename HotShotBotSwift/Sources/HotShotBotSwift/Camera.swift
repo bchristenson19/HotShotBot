@@ -1,8 +1,18 @@
 import SwiftUI
 
+/// Whether a camera is a real networked Panasonic PTZ head or the in-app virtual camera.
+/// Mirrors `lib/ptz.ts`'s `CameraModel` union (`"aw-ue70" | … | "virtual"`), collapsed here to
+/// the only distinction the native app actually acts on: real cameras hit the network, virtual
+/// ones are driven by a `VirtualPtzController` + `VirtualCameraRenderer` entirely on-device.
+/// `RawRepresentable`/`Codable` so it persists in the `[Camera]` JSON blob.
+enum CameraKind: String, Codable {
+    case panasonic
+    case virtual
+}
+
 /// A single configured PTZ camera — replaces the milestone-1 single-camera `CameraSettings`.
-/// IP/port/stream fields mirror `lib/ptz.ts`'s `Camera` type, minus model/virtual-camera fields
-/// (still out of scope for this milestone — see the project README).
+/// IP/port/stream fields mirror `lib/ptz.ts`'s `Camera` type; `kind` adds the virtual-camera
+/// distinction (see `CameraKind`), previously deferred.
 struct Camera: Codable, Equatable, Identifiable {
     var id: UUID = UUID()
     var name: String
@@ -10,11 +20,45 @@ struct Camera: Codable, Equatable, Identifiable {
     var port: Int = 80
     var colorHex: String = "#1d4ed8"
 
+    /// Defaulted so persisted `[Camera]` JSON written before this field existed still decodes
+    /// (as `.panasonic`) — same migration-safety reasoning as every other defaulted field here.
+    var kind: CameraKind = .panasonic
+
+    /// Mirrors `isVirtual(cam)` in lib/ptz.ts.
+    var isVirtual: Bool { kind == .virtual }
+
     /// Default MJPEG stream URL, matching `STREAM_PATHS["aw-ue70"]` in lib/ptz.ts (shared
-    /// default across AW-UE70/UE160/HE130 in the TS version).
+    /// default across AW-UE70/UE160/HE130 in the TS version). Virtual cameras have no network
+    /// stream — their frames come from `VirtualCameraRenderer` instead — so this is `nil` for
+    /// them (matching `defaultStreamUrl` returning `""` for virtual in the TS version).
     var streamURL: URL? {
-        guard !ip.isEmpty else { return nil }
+        guard kind != .virtual, !ip.isEmpty else { return nil }
         return URL(string: "http://\(ip):\(port)/cgi-bin/mjpeg?resolution=1920x1080&quality=4&framerate=30")
+    }
+
+    init(id: UUID = UUID(), name: String, ip: String = "", port: Int = 80,
+         colorHex: String = "#1d4ed8", kind: CameraKind = .panasonic) {
+        self.id = id
+        self.name = name
+        self.ip = ip
+        self.port = port
+        self.colorHex = colorHex
+        self.kind = kind
+    }
+
+    /// Custom decoder so a defaulted field can be *absent* from persisted JSON. Swift's
+    /// synthesized `init(from:)` ignores property default values and requires every key — so
+    /// `[Camera]` blobs written before `kind` (or any future defaulted field) existed would fail
+    /// to decode outright, losing the user's saved cameras. Decoding each field with a fallback
+    /// keeps old data readable. (`encode(to:)` stays synthesized.)
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decode(String.self, forKey: .name)
+        ip = try c.decodeIfPresent(String.self, forKey: .ip) ?? ""
+        port = try c.decodeIfPresent(Int.self, forKey: .port) ?? 80
+        colorHex = try c.decodeIfPresent(String.self, forKey: .colorHex) ?? "#1d4ed8"
+        kind = try c.decodeIfPresent(CameraKind.self, forKey: .kind) ?? .panasonic
     }
 }
 

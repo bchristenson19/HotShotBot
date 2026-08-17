@@ -79,6 +79,21 @@ final class MJPEGStreamDecoder: NSObject, ObservableObject {
         connect(to: url)
     }
 
+    /// Injects an externally-rendered frame, bypassing the network path entirely. This is the
+    /// virtual camera's frame sink (`VirtualCameraRenderer` calls it ~30×/sec): a virtual
+    /// `CameraSession` never calls `start(url:)`, so no `URLSession` is ever opened — the same
+    /// `currentFrame`/`status` surface the UI and tracker already observe is simply driven from a
+    /// SceneKit render instead of decoded JPEG bytes. Safe to call from any thread; the
+    /// `@Published` update is hopped to the main thread like the network decode path.
+    func publish(frame: NSImage) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.currentFrame = frame
+            self.frameCount += 1
+            if self.status != .streaming { self.status = .streaming }
+        }
+    }
+
     func stop() {
         desiredURL = nil
         reconnectWorkItem?.cancel()

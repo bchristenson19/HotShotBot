@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Camera list editor — add/edit/remove cameras, replacing the milestone-1 single IP/port
 /// fields now that `CameraSessionStore` supports more than one. Structurally similar to the TS
-/// app's `CameraConfig.tsx`, minus model/discovery/virtual-camera fields (still out of scope for
-/// this milestone).
+/// app's `CameraConfig.tsx`. A camera-kind picker chooses between a real networked Panasonic
+/// camera and the in-app virtual camera (which needs no IP/port).
 struct SettingsView: View {
     @ObservedObject var sessionStore: CameraSessionStore
     @Binding var isPresented: Bool
@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var nameText = ""
     @State private var ipText = ""
     @State private var portText = ""
+    @State private var kindSelection: CameraKind = .panasonic
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -32,7 +33,7 @@ struct SettingsView: View {
                     Circle().fill(Color(hex: session.camera.colorHex)).frame(width: 10, height: 10)
                     VStack(alignment: .leading) {
                         Text(session.camera.name).font(.body)
-                        Text(session.camera.ip.isEmpty ? "No IP set" : "\(session.camera.ip):\(session.camera.port)")
+                        Text(subtitle(for: session.camera))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -49,8 +50,23 @@ struct SettingsView: View {
             Text(editingCameraID == nil ? "Add Camera" : "Edit Camera").font(.headline)
             Form {
                 TextField("Name", text: $nameText, prompt: Text("Camera 1"))
-                TextField("Camera IP address", text: $ipText, prompt: Text("192.168.1.50"))
-                TextField("Port", text: $portText, prompt: Text("80"))
+                Picker("Type", selection: $kindSelection) {
+                    Text("Panasonic").tag(CameraKind.panasonic)
+                    Text("Virtual").tag(CameraKind.virtual)
+                }
+                // Kind is fixed once a camera exists — the live session's client/renderer are
+                // wired for one kind at construction, so switching would require rebuilding the
+                // session. Add a new camera of the other kind instead.
+                .disabled(editingCameraID != nil)
+                if kindSelection == .panasonic {
+                    TextField("Camera IP address", text: $ipText, prompt: Text("192.168.1.50"))
+                    TextField("Port", text: $portText, prompt: Text("80"))
+                } else {
+                    Text("A simulated 3D camera — no network hardware needed. Drives the same "
+                        + "gamepad, PTZ, and AI-tracking pipeline against a rendered scene.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .textFieldStyle(.roundedBorder)
 
@@ -88,11 +104,17 @@ struct SettingsView: View {
         }
     }
 
+    private func subtitle(for camera: Camera) -> String {
+        if camera.isVirtual { return "Virtual camera" }
+        return camera.ip.isEmpty ? "No IP set" : "\(camera.ip):\(camera.port)"
+    }
+
     private func beginEditing(_ camera: Camera) {
         editingCameraID = camera.id
         nameText = camera.name
         ipText = camera.ip
         portText = String(camera.port)
+        kindSelection = camera.kind
     }
 
     private func resetForm() {
@@ -100,6 +122,7 @@ struct SettingsView: View {
         nameText = ""
         ipText = ""
         portText = ""
+        kindSelection = .panasonic
     }
 
     private func commit() {
@@ -114,11 +137,13 @@ struct SettingsView: View {
             updated.port = port
             sessionStore.applyEdits(id: id, updated)
         } else {
+            let defaultName = kindSelection == .virtual ? "Virtual Camera" : "Camera \(sessionStore.sessions.count + 1)"
             let newCamera = Camera(
-                name: name.isEmpty ? "Camera \(sessionStore.sessions.count + 1)" : name,
-                ip: ip,
+                name: name.isEmpty ? defaultName : name,
+                ip: kindSelection == .virtual ? "" : ip,
                 port: port,
-                colorHex: defaultCameraColor(at: sessionStore.sessions.count)
+                colorHex: defaultCameraColor(at: sessionStore.sessions.count),
+                kind: kindSelection
             )
             sessionStore.addCamera(newCamera)
         }

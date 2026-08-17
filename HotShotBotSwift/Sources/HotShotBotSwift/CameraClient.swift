@@ -50,8 +50,15 @@ final class CameraClient: ObservableObject {
     private var inFlight: Set<String> = []
     private let session: URLSession
 
-    init(camera: Camera) {
+    /// Non-nil for a virtual camera: `send` routes the CGI command into this pose integrator
+    /// instead of hitting the network. Because every outgoing command (gamepad, tracker, AF)
+    /// funnels through `send`, wiring the branch here covers all of them at once — see the
+    /// virtual branch in `send`.
+    let virtualController: VirtualPtzController?
+
+    init(camera: Camera, virtualController: VirtualPtzController? = nil) {
         self.camera = camera
+        self.virtualController = virtualController
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 2
         session = URLSession(configuration: config)
@@ -77,6 +84,19 @@ final class CameraClient: ObservableObject {
         // the first thing checked (after confirming a camera is selected at all), so yielding
         // suppresses every outgoing command unconditionally, not just pan/tilt.
         guard !isYielded else { return }
+
+        // Virtual camera: integrate the command into the pose instead of hitting the network.
+        // Mirrors app/page.tsx's `isVirtual(activeCam)` short-circuit in `sendCmd`, which returns
+        // before any fetch. Skips the `ip.isEmpty`/`inFlight`/`URLSession` machinery below — a
+        // virtual camera has no address and its "response" is synchronous.
+        if let virtualController {
+            lastCommand = cmd
+            virtualController.execCommand(cmd, endpoint: endpoint)
+            lastResponse = "ok (virtual)"
+            isConnected = true
+            return
+        }
+
         guard !camera.ip.isEmpty else { return }
         guard !inFlight.contains(channel) else { return }
         inFlight.insert(channel)
